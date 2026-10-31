@@ -181,23 +181,61 @@ export async function handleDeldbBackspace(env, cq) {
   return {};
 }
 
+
 export async function handleDeldbConfirm(env, cq) {
   const userId = cq.from.id;
-  const entered = await kvGet(env, `deldb:${userId}`);
-  if (entered === null) return { toast: '❌ Session expired.', alert: true };
-  if (entered !== state.DELDB_PASSWORD) {
+
+  // Only the configured owner can confirm a database wipe.
+  if (String(userId) !== String(state.OWNER_ID)) {
+    return { toast: '⛔ Owner only.', alert: true };
+  }
+
+  // Never allow deletion without a configured password.
+  if (
+    typeof state.DELDB_PASSWORD !== 'string' ||
+    !/^\d{4,20}$/.test(state.DELDB_PASSWORD)
+  ) {
     await kvDel(env, `deldb:${userId}`);
-    await editCq(env, cq, `❌ <b>Wrong password.</b>\nSession ended.`);
+    await editCq(
+      env,
+      cq,
+      '⛔ Database wipe is disabled. Configure a password first.'
+    );
     return {};
   }
+
+  const entered = await kvGet(env, `deldb:${userId}`);
+
+  if (entered === null) {
+    return { toast: '❌ Session expired.', alert: true };
+  }
+
+  if (entered !== state.DELDB_PASSWORD) {
+    await kvDel(env, `deldb:${userId}`);
+    await editCq(env, cq, '❌ Wrong password. Session ended.');
+    return {};
+  }
+
   const { batch } = await import('./db.js');
-  const tables = ['kv_store','groups','posts','threads','logs','users','reveals','group_members',
-    'group_settings','contests','contest_bag','runs','participants','submissions','sub_history',
-    'votes','preregs','claims','wins'];
-  await batch(env, tables.map(t => ({ sql: `DELETE FROM ${t}`, args: [] })));
-  await editCq(env, cq, `🗑 <b>Database wiped.</b>\n\nAll data cleared.`);
+
+  const tables = [
+    'kv_store', 'groups', 'posts', 'threads', 'logs', 'users',
+    'reveals', 'group_members', 'group_settings', 'contests',
+    'contest_bag', 'runs', 'participants', 'submissions',
+    'sub_history', 'votes', 'preregs', 'claims', 'wins'
+  ];
+
+  await batch(env, tables.map(t => ({
+    sql: `DELETE FROM ${t}`,
+    args: []
+  })));
+
+  await kvDel(env, `deldb:${userId}`);
+  await editCq(env, cq, '🗑 Database wiped. All data cleared.');
   return {};
 }
+
+
 
 export async function handleDeldbCancel(env, cq) {
   const userId = cq.from.id;
