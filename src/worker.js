@@ -12,19 +12,43 @@ export default {
     applyEnv(env);
 
     const url = new URL(request.url);
-    const secret = state.WEBHOOK_SECRET;
 
-    if (!secret) {
-      return new Response('WEBHOOK_SECRET missing', {
+    const webhookSecret = state.WEBHOOK_SECRET;
+    const adminSecret = state.ADMIN_SECRET;
+
+    if (!webhookSecret) {
+      return new Response('Webhook configuration missing.', {
         status: 500
       });
     }
 
-    // ─── Admin authentication ───
-    const isAdmin = () =>
-      request.headers.get('X-Admin-Key') === secret;
+    // Admin endpoints require a separate secret.
+    const isAdmin = () => {
+      const supplied = request.headers.get('X-Admin-Key');
 
-    // ─── /config — protected debug endpoint ───
+      return (
+        typeof adminSecret === 'string' &&
+        adminSecret.length >= 32 &&
+        supplied !== null &&
+        supplied === adminSecret
+      );
+    };
+
+    // ─── Admin authentication ───
+    const adminOnly = () => {
+      if (!isAdmin()) {
+        return new Response('Unauthorized', {
+          status: 401,
+          headers: {
+            'Cache-Control': 'no-store'
+          }
+        });
+      }
+
+      return null;
+    };
+
+    // ─── /config ───
     if (url.pathname === '/config') {
       if (request.method !== 'GET') {
         return new Response('Method not allowed', {
@@ -33,19 +57,19 @@ export default {
         });
       }
 
-      if (!isAdmin()) {
-        return new Response('Unauthorized', { status: 401 });
-      }
+      const denied = adminOnly();
+      if (denied) return denied;
 
       const required = [
         'BOT_TOKEN',
         'WEBHOOK_SECRET',
+        'ADMIN_SECRET',
         'TURSO_DB_URL',
         'TURSO_AUTH_TOKEN',
         'OWNER_ID'
       ];
 
-      const out = {
+      const output = {
         sources: SOURCES,
         missing_required: required.filter(
           key => SOURCES[key] === 'MISSING'
@@ -56,15 +80,18 @@ export default {
         bot_name: state.BOT_NAME
       };
 
-      return new Response(JSON.stringify(out, null, 2), {
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store'
+      return new Response(
+        JSON.stringify(output, null, 2),
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store'
+          }
         }
-      });
+      );
     }
 
-    // ─── /api/logs — protected logs endpoint ───
+    // ─── /api/logs ───
     if (url.pathname === '/api/logs') {
       if (request.method !== 'GET') {
         return new Response('Method not allowed', {
@@ -73,14 +100,13 @@ export default {
         });
       }
 
-      if (!isAdmin()) {
-        return new Response('Unauthorized', { status: 401 });
-      }
+      const denied = adminOnly();
+      if (denied) return denied;
 
       try {
         await initDB(env);
 
-        const res = await q(
+        const result = await q(
           env,
           `SELECT ts, user_id as id, name,
            username as user, text, action
@@ -89,14 +115,17 @@ export default {
            LIMIT 50`
         );
 
-        return new Response(JSON.stringify(res.rows), {
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-store'
+        return new Response(
+          JSON.stringify(result.rows),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store'
+            }
           }
-        });
-      } catch (e) {
-        console.error('Logs endpoint error:', e);
+        );
+      } catch (error) {
+        console.error('Logs endpoint error:', error);
 
         return new Response(
           JSON.stringify({
@@ -105,14 +134,15 @@ export default {
           {
             status: 500,
             headers: {
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store'
             }
           }
         );
       }
     }
 
-    // ─── /setwebhook — protected one-time setup ───
+    // ─── /setwebhook ───
     if (url.pathname === '/setwebhook') {
       if (request.method !== 'POST') {
         return new Response('Method not allowed', {
@@ -121,9 +151,8 @@ export default {
         });
       }
 
-      if (!isAdmin()) {
-        return new Response('Unauthorized', { status: 401 });
-      }
+      const denied = adminOnly();
+      if (denied) return denied;
 
       try {
         await initDB(env);
@@ -132,7 +161,7 @@ export default {
 
         const result = await tg(env, 'setWebhook', {
           url: hook,
-          secret_token: secret,
+          secret_token: webhookSecret,
           allowed_updates: [
             'message',
             'callback_query',
@@ -140,7 +169,7 @@ export default {
           ]
         });
 
-        if (!result || !result.ok) {
+        if (!result?.ok) {
           console.error('Telegram rejected webhook setup:', result);
 
           return new Response(
@@ -149,7 +178,16 @@ export default {
           );
         }
 
-        await setupCommands(env);
+        const commandsResult = await setupCommands(env);
+
+        if (commandsResult?.ok === false) {
+          console.error('Telegram command setup failed.');
+
+          return new Response(
+            'Webhook configured, but command setup failed.',
+            { status: 502 }
+          );
+        }
 
         return new Response(
           `Webhook configured successfully.\n${hook}`,
@@ -161,8 +199,8 @@ export default {
             }
           }
         );
-      } catch (e) {
-        console.error('Webhook setup error:', e);
+      } catch (error) {
+        console.error('Webhook setup error:', error);
 
         return new Response('Webhook setup failed.', {
           status: 500
@@ -170,18 +208,17 @@ export default {
       }
     }
 
-    // ─── /cron — protected manual scheduler ───
+    // ─── /cron ───
     if (url.pathname === '/cron') {
-      if (request.method !== 'GET') {
+      if (request.method !== 'POST') {
         return new Response('Method not allowed', {
           status: 405,
-          headers: { Allow: 'GET' }
+          headers: { Allow: 'POST' }
         });
       }
 
-      if (!isAdmin()) {
-        return new Response('Unauthorized', { status: 401 });
-      }
+      const denied = adminOnly();
+      if (denied) return denied;
 
       try {
         await initDB(env);
@@ -192,8 +229,8 @@ export default {
             'Cache-Control': 'no-store'
           }
         });
-      } catch (e) {
-        console.error('Manual cron error:', e);
+      } catch (error) {
+        console.error('Manual cron error:', error);
 
         return new Response('Scheduler failed.', {
           status: 500
@@ -202,16 +239,23 @@ export default {
     }
 
     // ─── Telegram webhook ───
-    if (url.pathname !== '/webhook' || request.method !== 'POST') {
-      return new Response('Not found', { status: 404 });
+    if (
+      url.pathname !== '/webhook' ||
+      request.method !== 'POST'
+    ) {
+      return new Response('Not found', {
+        status: 404
+      });
     }
 
     if (
       request.headers.get(
         'X-Telegram-Bot-Api-Secret-Token'
-      ) !== secret
+      ) !== webhookSecret
     ) {
-      return new Response('Unauthorized', { status: 401 });
+      return new Response('Unauthorized', {
+        status: 401
+      });
     }
 
     let update;
@@ -219,15 +263,17 @@ export default {
     try {
       update = await request.json();
     } catch {
-      return new Response('Bad JSON', { status: 400 });
+      return new Response('Bad JSON', {
+        status: 400
+      });
     }
 
     ctx.waitUntil((async () => {
       try {
         await initDB(env);
         await handleUpdate(update, env, ctx);
-      } catch (e) {
-        console.error('Update Error:', e);
+      } catch (error) {
+        console.error('Update Error:', error);
       }
     })());
 
@@ -243,8 +289,8 @@ export default {
         await initDB(env);
         await tick(env);
         await warmCards(env);
-      } catch (e) {
-        console.error('Scheduled task error:', e);
+      } catch (error) {
+        console.error('Scheduled task error:', error);
       }
     })());
   }
