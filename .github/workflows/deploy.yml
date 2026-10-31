@@ -1,3 +1,4 @@
+
 name: Deploy Cloudflare Worker
 
 on:
@@ -8,12 +9,16 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
       - run: npm install
+
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
@@ -22,6 +27,7 @@ jobs:
           secrets: |
             BOT_TOKEN
             WEBHOOK_SECRET
+            ADMIN_SECRET
             TURSO_DB_URL
             TURSO_AUTH_TOKEN
             IMAGE_API_URL
@@ -32,6 +38,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
           TURSO_DB_URL: ${{ secrets.TURSO_DB_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           IMAGE_API_URL: ${{ secrets.IMAGE_API_URL }}
@@ -39,3 +46,4 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           DELDB_PASSWORD: ${{ secrets.DELDB_PASSWORD }}
           SUPPORT_GROUP: ${{ secrets.SUPPORT_GROUP }}
+          
