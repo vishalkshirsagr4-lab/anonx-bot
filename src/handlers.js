@@ -217,7 +217,7 @@ async function handleDM(msg, env, ctx) {
         return startDeldb(env, chatId, userId);
       case 'addcontest': case 'add': case 'listcontest': case 'xcontest':
         if (!isOwner(userId)) return send(env, chatId, `⛔ Owner only.`);
-        return handleOwnerCmd(msg, cmd, env);
+        return handleOwnerCmd(env, msg, cmd);
       case 'delcontest':
         if (!isOwner(userId)) return send(env, chatId, `⛔ Owner only.`);
         return handleDelContestDM(env, chatId, userId, cmd.arg);
