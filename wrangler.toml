@@ -6,8 +6,6 @@ compatibility_flags = ["nodejs_compat"]
 [observability]
 enabled = true
 
-# Secrets are NOT stored here — use `wrangler secret put` or GitHub secrets.
-# The following are placeholders so wrangler doesn't complain:
 [vars]
 BOT_NAME = "AnonX"
 MULTI_ANON = "true"
