@@ -82,31 +82,148 @@ export async function groupContestStatus(env, chatId, replyTo) {
     { reply_to_message_id: replyTo });
 }
 
+
 export async function startRun(env, chatId, st, now) {
-  const bag = (await q(env, `SELECT c.* FROM contest_bag b JOIN contests c ON c.id = b.contest_id WHERE b.chat_id = ? ORDER BY RANDOM() LIMIT 1`, [chatId])).rows[0];
+  const bag = (
+    await q(
+      env,
+      `SELECT c.*
+       FROM contest_bag b
+       JOIN contests c ON c.id = b.contest_id
+       WHERE b.chat_id = ?
+       ORDER BY RANDOM()
+       LIMIT 1`,
+      [chatId]
+    )
+  ).rows[0];
+
   if (!bag) return false;
-  const submitMin = st.submit_min || Math.round(CFG.DEFAULT_SUBMIT_HOURS * 60);
-  const voteMin = st.vote_min || Math.round(CFG.DEFAULT_VOTE_HOURS * 60);
-  const res = await q(env,
-    `INSERT INTO runs (chat_id, contest_id, name, rank_key, image_url, p1, p2, p3, ps, status, start_ts, end_ts, vote_min, min_join, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'submission', ?, ?, ?, ?, ?)`,
-    [chatId, bag.id, bag.name, bag.rank_key, bag.image_url, bag.p1, bag.p2, bag.p3, bag.ps, now, now + submitMin * 60000, voteMin, st.min_join || CFG.MIN_JOIN_DEFAULT, now]);
+
+  const submitMin =
+    st.submit_min || Math.round(CFG.DEFAULT_SUBMIT_HOURS * 60);
+
+  const voteMin =
+    st.vote_min || Math.round(CFG.DEFAULT_VOTE_HOURS * 60);
+
+  const minJoin =
+    st.min_join || CFG.MIN_JOIN_DEFAULT;
+
+  const endTs = now + submitMin * 60000;
+
+  const res = await q(
+    env,
+    `INSERT INTO runs (
+      chat_id, contest_id, name, rank_key, image_url,
+      p1, p2, p3, ps, status, start_ts, end_ts,
+      vote_min, min_join, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'submission', ?, ?, ?, ?, ?)`,
+    [
+      chatId,
+      bag.id,
+      bag.name,
+      bag.rank_key,
+      bag.image_url,
+      bag.p1,
+      bag.p2,
+      bag.p3,
+      bag.ps,
+      now,
+      endTs,
+      voteMin,
+      minJoin,
+      now
+    ]
+  );
 
   const runId = res.lastId;
-  const bi = await getBotInfo(env);
-  const partUrl = `https://t.me/${bi.username}?start=join_${runId}`;
-  const caption = `🎮 <b>New Contest!</b>\n\n<b>${esc(bag.name)}</b>\n🏆 Rank: ${rankLabel(bag.rank_key)}\n\n📝 Submission open until <b>${fmtTime(now + submitMin * 60000)}</b>\n\n🥇 ${bag.p1} • 🥈 ${bag.p2} • 🥉 ${bag.p3} • 🎁 ${bag.ps}\n👥 Min participants: ${st.min_join || CFG.MIN_JOIN_DEFAULT}`;
-  const markup = { inline_keyboard: [[{ text: '🎯 Participate', url: partUrl }]] };
 
-  if (bag.image_url) {
-    const photo = await tg(env, 'sendPhoto', {
-      chat_id: chatId, photo: bag.image_url, caption,
-      parse_mode: 'HTML', reply_markup: markup
-    });
-    if (photo.ok) {
-      await q(env, `UPDATE runs SET announce_msg_id = ? WHERE run_id = ?`, [photo.result.message_id, runId]);
-      return true;
-    }
+  if (!runId) {
+    console.error('Contest creation failed: missing run ID.');
+    return false;
   }
+
+  try {
+    const bi = await getBotInfo(env);
+    const partUrl =
+      `https://t.me/${bi.username}?start=join_${runId}`;
+
+    const caption =
+      `🎮 <b>New Contest!</b>\n\n` +
+      `<b>${esc(bag.name)}</b>\n` +
+      `🏆 Rank: ${rankLabel(bag.rank_key)}\n\n` +
+      `📝 Submission open until <b>${fmtTime(endTs)}</b>\n\n` +
+      `🥇 ${bag.p1} • 🥈 ${bag.p2} • 🥉 ${bag.p3} • 🎁 ${bag.ps}\n` +
+      `👥 Min participants: ${minJoin}`;
+
+    const markup = {
+      inline_keyboard: [
+        [
+          {
+            text: '🎯 Participate',
+            url: partUrl
+          }
+        ]
+      ]
+    };
+
+    let sent = null;
+
+    if (bag.image_url) {
+      sent = await tg(env, 'sendPhoto', {
+        chat_id: chatId,
+        photo: bag.image_url,
+        caption,
+        parse_mode: 'HTML',
+        reply_markup: markup
+      });
+    }
+
+    if (!sent?.ok) {
+      sent = await send(
+        env,
+        chatId,
+        caption,
+        { reply_markup: markup }
+      );
+    }
+
+    if (!sent?.ok) {
+      console.error(
+        'Contest announcement failed:',
+        sent?.description || 'Telegram send failed'
+      );
+
+      await q(
+        env,
+        `DELETE FROM runs WHERE run_id = ? AND status = 'submission'`,
+        [runId]
+      );
+
+      return false;
+    }
+
+    await q(
+      env,
+      `UPDATE runs SET announce_msg_id = ? WHERE run_id = ?`,
+      [sent.result.message_id, runId]
+    );
+
+    return true;
+
+  } catch (error) {
+    console.error('Contest announcement error:', error);
+
+    await q(
+      env,
+      `DELETE FROM runs WHERE run_id = ? AND status = 'submission'`,
+      [runId]
+    );
+
+    return false;
+  }
+}
+
   const sent = await send(env, chatId, caption, { reply_markup: markup });
   if (sent.ok) {
     await q(env, `UPDATE runs SET announce_msg_id = ? WHERE run_id = ?`, [sent.result.message_id, runId]);
