@@ -1,5 +1,5 @@
 // src/help.js
-import { CFG, state } from './config.js';
+import { CFG, state, isOwner } from './config.js';
 
 let HELP = null;
 
