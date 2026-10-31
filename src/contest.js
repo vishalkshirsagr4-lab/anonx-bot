@@ -1,34 +1,52 @@
 
 import { CFG, rankLabel } from './config.js';
-import { q, addCoins } from './db.js';
+import { q } from './db.js';
 import { tg } from './telegram.js';
 import { send } from './cards.js';
 import { esc, fmtDur, fmtTime, getBotInfo } from './helpers.js';
 
+// ─── Join contest ───
 export async function handleJoin(env, from, runId) {
-  const r = await q(env, `SELECT * FROM runs WHERE run_id = ?`, [runId]);
+  const r = await q(
+    env,
+    `SELECT * FROM runs WHERE run_id = ?`,
+    [runId]
+  );
+
   if (!r.rows.length) return { err: 'not_found' };
 
   const run = r.rows[0];
-  if (run.status !== 'submission') return { err: 'closed' };
+
+  if (run.status !== 'submission') {
+    return { err: 'closed' };
+  }
 
   await q(
     env,
-    `INSERT OR IGNORE INTO participants (run_id, user_id, joined_at) VALUES (?, ?, ?)`,
+    `INSERT OR IGNORE INTO participants
+     (run_id, user_id, joined_at)
+     VALUES (?, ?, ?)`,
     [runId, from.id, Date.now()]
   );
 
   return { ok: true, run };
 }
 
+// ─── Submit command ───
 export async function handleSubmitCmd(env, chatId, userId, msg) {
   const r = await q(
     env,
-    `SELECT * FROM runs WHERE status = 'submission' ORDER BY run_id DESC`
+    `SELECT * FROM runs
+     WHERE status = 'submission'
+     ORDER BY run_id DESC`
   );
 
   if (!r.rows.length) {
-    return send(env, chatId, `❌ No contest open for submission right now.`);
+    return send(
+      env,
+      chatId,
+      `❌ No contest open for submission right now.`
+    );
   }
 
   return send(
@@ -47,10 +65,14 @@ export async function handleSubmitCmd(env, chatId, userId, msg) {
   );
 }
 
+// ─── DM contest status ───
 export async function dmContestStatus(env, chatId, userId) {
   const r = await q(
     env,
-    `SELECT * FROM runs WHERE status != 'done' ORDER BY run_id DESC LIMIT 3`
+    `SELECT * FROM runs
+     WHERE status != 'done'
+     ORDER BY run_id DESC
+     LIMIT 3`
   );
 
   if (!r.rows.length) {
@@ -72,12 +94,16 @@ export async function dmContestStatus(env, chatId, userId) {
   );
 }
 
+// ─── Group contest status ───
 export async function groupContestStatus(env, chatId, replyTo) {
   const now = Date.now();
 
   const r = await q(
     env,
-    `SELECT * FROM runs WHERE chat_id = ? AND status != 'done' ORDER BY run_id DESC LIMIT 1`,
+    `SELECT * FROM runs
+     WHERE chat_id = ? AND status != 'done'
+     ORDER BY run_id DESC
+     LIMIT 1`,
     [chatId]
   );
 
@@ -86,9 +112,10 @@ export async function groupContestStatus(env, chatId, replyTo) {
     const st = await getSettings(env, chatId);
     const { nextOccurrence } = await import('./helpers.js');
 
-    const next = st.next_announce_ts && st.next_announce_ts > 0
-      ? st.next_announce_ts
-      : nextOccurrence(st.announce_min, now);
+    const next =
+      st.next_announce_ts && st.next_announce_ts > 0
+        ? st.next_announce_ts
+        : nextOccurrence(st.announce_min, now);
 
     return send(
       env,
@@ -106,7 +133,9 @@ export async function groupContestStatus(env, chatId, replyTo) {
     const joined = (
       await q(
         env,
-        `SELECT COUNT(*) as n FROM participants WHERE run_id = ?`,
+        `SELECT COUNT(*) as n
+         FROM participants
+         WHERE run_id = ?`,
         [run.run_id]
       )
     ).rows[0].n;
@@ -160,7 +189,19 @@ export async function groupContestStatus(env, chatId, replyTo) {
   );
 }
 
+// ─── Start contest ───
 export async function startRun(env, chatId, st, now) {
+  // Avoid creating another active contest for the same group.
+  const active = await q(
+    env,
+    `SELECT run_id FROM runs
+     WHERE chat_id = ? AND status IN ('submission', 'voting')
+     LIMIT 1`,
+    [chatId]
+  );
+
+  if (active.rows.length) return false;
+
   const bagResult = await q(
     env,
     `SELECT c.*
@@ -243,7 +284,6 @@ export async function startRun(env, chatId, st, now) {
 
     let sent = null;
 
-    // Try sending the contest image first.
     if (bag.image_url) {
       sent = await tg(env, 'sendPhoto', {
         chat_id: chatId,
@@ -254,7 +294,6 @@ export async function startRun(env, chatId, st, now) {
       });
     }
 
-    // If the image fails or is unavailable, send text.
     if (!sent?.ok) {
       sent = await send(
         env,
@@ -264,7 +303,6 @@ export async function startRun(env, chatId, st, now) {
       );
     }
 
-    // Do not keep a contest that was never announced.
     if (!sent?.ok) {
       console.error(
         'Contest announcement failed:',
@@ -273,7 +311,8 @@ export async function startRun(env, chatId, st, now) {
 
       await q(
         env,
-        `DELETE FROM runs WHERE run_id = ? AND status = 'submission'`,
+        `DELETE FROM runs
+         WHERE run_id = ? AND status = 'submission'`,
         [runId]
       );
 
@@ -282,7 +321,9 @@ export async function startRun(env, chatId, st, now) {
 
     await q(
       env,
-      `UPDATE runs SET announce_msg_id = ? WHERE run_id = ?`,
+      `UPDATE runs
+       SET announce_msg_id = ?
+       WHERE run_id = ?`,
       [sent.result.message_id, runId]
     );
 
@@ -293,7 +334,8 @@ export async function startRun(env, chatId, st, now) {
 
     await q(
       env,
-      `DELETE FROM runs WHERE run_id = ? AND status = 'submission'`,
+      `DELETE FROM runs
+       WHERE run_id = ? AND status = 'submission'`,
       [runId]
     );
 
@@ -301,6 +343,7 @@ export async function startRun(env, chatId, st, now) {
   }
 }
 
+// ─── Force contest ───
 export async function forceContest(env, chatId) {
   const { getSettings } = await import('./settings.js');
   const st = await getSettings(env, chatId);
@@ -311,31 +354,46 @@ export async function forceContest(env, chatId) {
     return send(
       env,
       chatId,
-      `❌ No contest in bag for this group. Add with /addcontest.`
+      `❌ No contest available, or another contest is already running.`
     );
   }
 }
 
+// ─── Advance to voting ───
 export async function advanceToVoting(env, run) {
-  await q(
+  // Only one execution can change submission to voting.
+  const update = await q(
     env,
-    `UPDATE runs SET status = 'voting', vote_end_ts = ? WHERE run_id = ?`,
+    `UPDATE runs
+     SET status = 'voting',
+         vote_end_ts = ?
+     WHERE run_id = ?
+       AND status = 'submission'`,
     [
       Date.now() + (run.vote_min || 1440) * 60000,
       run.run_id
     ]
   );
 
+  if (update.rowsAffected === 0) {
+    return;
+  }
+
   const subs = (
     await q(
       env,
-      `SELECT * FROM submissions WHERE run_id = ? ORDER BY first_ts ASC`,
+      `SELECT * FROM submissions
+       WHERE run_id = ?
+       ORDER BY first_ts ASC`,
       [run.run_id]
     )
   ).rows;
 
   if (!subs.length) {
-    await finishRun(env, { ...run, status: 'voting' });
+    await finishRun(env, {
+      ...run,
+      status: 'voting'
+    });
     return;
   }
 
@@ -355,13 +413,9 @@ export async function advanceToVoting(env, run) {
     const c = JSON.parse(s.content_json || '{}');
     const header = `#${num} — Anonymous Entry`;
 
-    let body = '';
-
-    if (c.text) {
-      body = `<b>${esc(c.text)}</b>`;
-    } else {
-      body = `<i>[media]</i>`;
-    }
+    const body = c.text
+      ? `<b>${esc(c.text)}</b>`
+      : `<i>[media]</i>`;
 
     const msgText = `${header}\n\n${body}`;
 
@@ -406,10 +460,12 @@ export async function advanceToVoting(env, run) {
       );
     }
 
-    if (sent.ok) {
+    if (sent?.ok) {
       await q(
         env,
-        `UPDATE submissions SET post_msg_id = ?, number = ? WHERE id = ?`,
+        `UPDATE submissions
+         SET post_msg_id = ?, number = ?
+         WHERE id = ?`,
         [sent.result.message_id, num, s.id]
       );
     }
@@ -418,11 +474,16 @@ export async function advanceToVoting(env, run) {
   }
 }
 
+// ─── Finish contest with idempotent rewards ───
 export async function finishRun(env, run) {
+  if (run.status === 'done') return;
+
   const subs = (
     await q(
       env,
-      `SELECT * FROM submissions WHERE run_id = ? ORDER BY votes DESC, first_ts ASC`,
+      `SELECT * FROM submissions
+       WHERE run_id = ?
+       ORDER BY votes DESC, first_ts ASC`,
       [run.run_id]
     )
   ).rows;
@@ -430,20 +491,24 @@ export async function finishRun(env, run) {
   const minJoin = run.min_join || CFG.MIN_JOIN_DEFAULT;
 
   if (subs.length < minJoin) {
-    await send(
+    const update = await q(
       env,
-      run.chat_id,
-      `⚠️ <b>Contest Cancelled</b>\n\n` +
-      `<b>${esc(run.name)}</b>\n` +
-      `Only ${subs.length}/${minJoin} submissions. Not enough to award prizes.`,
-      { plain: true }
-    );
-
-    await q(
-      env,
-      `UPDATE runs SET status = 'done' WHERE run_id = ?`,
+      `UPDATE runs
+       SET status = 'done'
+       WHERE run_id = ? AND status = 'voting'`,
       [run.run_id]
     );
+
+    if (update.rowsAffected > 0) {
+      await send(
+        env,
+        run.chat_id,
+        `⚠️ <b>Contest Cancelled</b>\n\n` +
+        `<b>${esc(run.name)}</b>\n` +
+        `Only ${subs.length}/${minJoin} submissions. Not enough to award prizes.`,
+        { plain: true }
+      );
+    }
 
     return;
   }
@@ -451,35 +516,50 @@ export async function finishRun(env, run) {
   const prizes = [run.p1, run.p2, run.p3];
   const winners = [];
 
+  // Winner rewards: the database trigger credits coins and records wins.
   for (let i = 0; i < Math.min(3, subs.length); i++) {
-    const prize = prizes[i] || 0;
-
-    await addCoins(env, subs[i].user_id, prize);
+    const sub = subs[i];
+    const prize = Number(prizes[i]) || 0;
 
     await q(
       env,
-      `INSERT INTO wins (user_id, run_id, chat_id, place, prize, ts) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO run_rewards
+       (run_id, user_id, reward_type, amount, chat_id, place, created_at)
+       VALUES (?, ?, 'winner', ?, ?, ?, ?)`,
       [
-        subs[i].user_id,
         run.run_id,
+        sub.user_id,
+        prize,
         run.chat_id,
         i + 1,
-        prize,
         Date.now()
       ]
     );
 
     winners.push({
-      user_id: subs[i].user_id,
+      user_id: sub.user_id,
       place: i + 1,
       prize,
-      votes: subs[i].votes
+      votes: sub.votes
     });
   }
 
-  for (const s of subs) {
-    if (s.votes >= 0 && run.ps) {
-      await addCoins(env, s.user_id, run.ps);
+  // Participation rewards.
+  if (Number(run.ps) > 0) {
+    for (const sub of subs) {
+      await q(
+        env,
+        `INSERT OR IGNORE INTO run_rewards
+         (run_id, user_id, reward_type, amount, chat_id, place, created_at)
+         VALUES (?, ?, 'participant', ?, ?, NULL, ?)`,
+        [
+          run.run_id,
+          sub.user_id,
+          Number(run.ps),
+          run.chat_id,
+          Date.now()
+        ]
+      );
     }
   }
 
@@ -489,25 +569,30 @@ export async function finishRun(env, run) {
     `${medals[i]} ${w.votes} votes — +${w.prize} 🪙`
   ).join('\n');
 
-  await send(
+  // Mark finished only after reward processing succeeds.
+  const update = await q(
     env,
-    run.chat_id,
-    `🏆 <b>Contest Finished!</b>\n\n` +
-    `<b>${esc(run.name)}</b>\n\n` +
-    `${winLines}\n\n` +
-    `🎁 All submitters get +${run.ps} 🪙\n\n` +
-    `<i>Winners have been credited.</i>`,
-    { plain: true }
-  );
-
-  await q(
-    env,
-    `UPDATE runs SET status = 'done' WHERE run_id = ?`,
+    `UPDATE runs
+     SET status = 'done'
+     WHERE run_id = ? AND status = 'voting'`,
     [run.run_id]
   );
+
+  if (update.rowsAffected > 0) {
+    await send(
+      env,
+      run.chat_id,
+      `🏆 <b>Contest Finished!</b>\n\n` +
+      `<b>${esc(run.name)}</b>\n\n` +
+      `${winLines}\n\n` +
+      `🎁 All submitters get +${run.ps} 🪙\n\n` +
+      `<i>Winners have been credited.</i>`,
+      { plain: true }
+    );
+  }
 }
 
-
+// ─── Handle vote ───
 export async function handleVote(env, cq, subId) {
   const userId = cq.from.id;
 
@@ -550,15 +635,14 @@ export async function handleVote(env, cq, subId) {
     };
   }
 
-  // Insert only if this user has not voted for this entry.
   const voteResult = await q(
     env,
-    `INSERT OR IGNORE INTO votes (sub_id, voter_id, ts)
+    `INSERT OR IGNORE INTO votes
+     (sub_id, voter_id, ts)
      VALUES (?, ?, ?)`,
     [subId, userId, Date.now()]
   );
 
-  // A zero row count means the vote already exists.
   if (voteResult.rowsAffected === 0) {
     return {
       toast: '✅ You already voted for this entry.',
@@ -566,7 +650,6 @@ export async function handleVote(env, cq, subId) {
     };
   }
 
-  // Increase the vote count only after a successful insertion.
   await q(
     env,
     `UPDATE submissions
