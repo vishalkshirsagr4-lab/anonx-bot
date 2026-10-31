@@ -382,6 +382,7 @@ async function handleSubmitEntry(env, msg, runId) {
 // ────────────────────────────────────────────────────────────
 // Command setup
 // ────────────────────────────────────────────────────────────
+
 export async function setupCommands(env) {
   const user = [
     { command: 'start', description: 'Main menu' },
@@ -395,7 +396,9 @@ export async function setupCommands(env) {
     { command: 'cancel', description: 'Cancel pending action' },
     { command: 'help', description: 'Help menu' },
   ];
-  const owner = [...user,
+
+  const owner = [
+    ...user,
     { command: 'addcontest', description: 'Owner: add a contest' },
     { command: 'add', description: 'Owner: bulk add from .txt' },
     { command: 'listcontest', description: 'Owner: list contests' },
@@ -403,7 +406,8 @@ export async function setupCommands(env) {
     { command: 'xcontest', description: 'Owner: force start contest' },
     { command: 'deldb', description: 'Owner: wipe database' },
   ];
-  const grp = [
+
+  const group = [
     { command: 'start', description: 'Bot info' },
     { command: 'ask', description: 'Anonymous question (opens DM)' },
     { command: 'contest', description: 'Contest status' },
@@ -412,13 +416,66 @@ export async function setupCommands(env) {
     { command: 'leaderboard', description: 'Top 10 group' },
     { command: 'help', description: 'Help' },
   ];
-  const grpAdmin = [...grp, { command: 'setting', description: 'Contest settings' }];
-  const ownerGroup = [...grp,
-    { command: 'xcontest', description: 'Owner: force start' },
-    { command: 'delcontest', description: 'Owner: delete in group' }
+
+  const groupAdmins = [
+    ...group,
+    { command: 'setting', description: 'Contest settings' },
   ];
-  await tg(env, 'setMyCommands', { commands: user, scope: { type: 'all_private_chats' } });
-  await tg(env, 'setMyCommands', { commands: grp, scope: { type: 'all_group_chats' } });
-  await tg(env, 'setMyCommands', { commands: grpAdmin, scope: { type: 'all_chat_administrators' } });
-  await tg(env, 'setMyCommands', { commands: owner, scope: { type: 'chat', chat_id: state.OWNER_ID } });
+
+  const requests = [
+    {
+      name: 'private commands',
+      body: {
+        commands: user,
+        scope: { type: 'all_private_chats' },
+      },
+    },
+    {
+      name: 'group commands',
+      body: {
+        commands: group,
+        scope: { type: 'all_group_chats' },
+      },
+    },
+    {
+      name: 'group admin commands',
+      body: {
+        commands: groupAdmins,
+        scope: { type: 'all_chat_administrators' },
+      },
+    },
+    {
+      name: 'owner commands',
+      body: {
+        commands: owner,
+        scope: {
+          type: 'chat',
+          chat_id: state.OWNER_ID,
+        },
+      },
+    },
+  ];
+
+  for (const request of requests) {
+    const result = await tg(
+      env,
+      'setMyCommands',
+      request.body
+    );
+
+    if (!result || result.ok !== true) {
+      console.error(
+        `Telegram command setup failed: ${request.name}`,
+        result?.description || 'Unknown Telegram API error'
+      );
+
+      return {
+        ok: false,
+        failed: request.name,
+        description: result?.description || 'Telegram API error',
+      };
+    }
+  }
+
+  return { ok: true };
 }
