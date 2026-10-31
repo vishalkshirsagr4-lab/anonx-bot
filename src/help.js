@@ -36,7 +36,7 @@ export function getHelp() {
 }
 
 export function helpMainView(userId, origin = 'help') {
-  const { isOwner } = require('./config.js');
+  
   const H = getHelp();
   const rows = [
     [{ text: H.ask.title, callback_data: `help_ask:${origin}` }],
