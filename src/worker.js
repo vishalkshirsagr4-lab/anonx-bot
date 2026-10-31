@@ -48,21 +48,54 @@ export default {
     }
 
     // /setwebhook — one-time setup
-    if (url.pathname === '/setwebhook') {
-      try {
-        await initDB(env);
-        const hook = `${url.origin}/webhook`;
-        const res = await tg(env, 'setWebhook', {
-          url: hook,
-          secret_token: secret,
-          allowed_updates: ['message', 'callback_query', 'my_chat_member']
-        });
-        await setupCommands(env);
-        return new Response(`✅ Webhook set to ${hook}\nCommands configured.\nTelegram: ${JSON.stringify(res)}`, { status: 200 });
-      } catch (e) {
-        return new Response(`❌ ${e.message}`, { status: 500 });
-      }
+    // /setwebhook — protected one-time setup
+if (url.pathname === '/setwebhook') {
+  if (request.method !== 'POST') {
+    return new Response('Method not allowed', {
+      status: 405,
+      headers: { Allow: 'POST' }
+    });
+  }
+
+  if (request.headers.get('X-Admin-Key') !== secret) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  try {
+    await initDB(env);
+
+    const hook = `${url.origin}/webhook`;
+
+    const res = await tg(env, 'setWebhook', {
+      url: hook,
+      secret_token: secret,
+      allowed_updates: [
+        'message',
+        'callback_query',
+        'my_chat_member'
+      ]
+    });
+
+    if (!res || !res.ok) {
+      return new Response('Telegram webhook setup failed.', {
+        status: 502
+      });
     }
+
+    await setupCommands(env);
+
+    return new Response(
+      `Webhook configured successfully.\n${hook}`,
+      { status: 200 }
+    );
+  } catch (e) {
+    console.error('Webhook setup error:', e);
+
+    return new Response('Webhook setup failed.', {
+      status: 500
+    });
+  }
+}
 
     // /health — cron/manual tick
     if (url.pathname === '/cron' && request.method === 'GET') {
