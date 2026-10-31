@@ -50,6 +50,10 @@ function fmtArgs(args) {
     }
 
     if (typeof a === 'number') {
+      if (!Number.isFinite(a)) {
+        throw new Error('SQL arguments cannot contain NaN or Infinity.');
+      }
+
       return Number.isInteger(a)
         ? {
             type: 'integer',
@@ -106,9 +110,9 @@ function parseResult(r) {
   return {
     rows,
     rowsAffected: er.affected_row_count,
-    lastId: er.last_insert_rowid
-      ? Number(er.last_insert_rowid)
-      : null
+    lastId: er.last_insert_rowid == null
+      ? null
+      : Number(er.last_insert_rowid)
   };
 }
 
@@ -217,13 +221,11 @@ export async function initDB(env) {
   }
 
   DB_INIT_PROMISE = (async () => {
-    // Create all required tables.
     await batch(
       env,
       SCHEMA.map(sql => ({ sql }))
     );
 
-    // Apply missing columns safely.
     const migrations = [
       ['group_settings', 'min_join', 'INTEGER'],
       ['group_settings', 'remind_min', 'INTEGER'],
