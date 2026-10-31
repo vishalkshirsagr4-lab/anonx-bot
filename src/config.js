@@ -9,7 +9,7 @@ export const state = {
   OWNER_ID: 8750122483,
   SUPPORT_GROUP: 'https://t.me/+lOxdvQHVCSdhZWU9',
   BOT_NAME: 'AnonX',
-  DELDB_PASSWORD: '9861',
+  DELDB_PASSWORD: '',
   MULTI_ANON: true,
   ANON_SHUFFLE_MODE: false,
   TOPIC_END_IDLE_MINUTES: 10,
