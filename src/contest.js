@@ -507,6 +507,7 @@ export async function finishRun(env, run) {
   );
 }
 
+
 export async function handleVote(env, cq, subId) {
   const userId = cq.from.id;
 
@@ -542,29 +543,35 @@ export async function handleVote(env, cq, subId) {
     return { toast: '⏰ Voting ended.', alert: true };
   }
 
-  if (sub.user_id === userId) {
-    return { toast: '🚫 You cannot vote for your own entry.', alert: true };
+  if (Number(sub.user_id) === Number(userId)) {
+    return {
+      toast: '🚫 You cannot vote for your own entry.',
+      alert: true
+    };
   }
 
-  const existing = await q(
+  // Insert only if this user has not voted for this entry.
+  const voteResult = await q(
     env,
-    `SELECT 1 FROM votes WHERE sub_id = ? AND voter_id = ?`,
-    [subId, userId]
-  );
-
-  if (existing.rows.length) {
-    return { toast: '✅ You already voted for this entry.', alert: true };
-  }
-
-  await q(
-    env,
-    `INSERT INTO votes (sub_id, voter_id, ts) VALUES (?, ?, ?)`,
+    `INSERT OR IGNORE INTO votes (sub_id, voter_id, ts)
+     VALUES (?, ?, ?)`,
     [subId, userId, Date.now()]
   );
 
+  // A zero row count means the vote already exists.
+  if (voteResult.rowsAffected === 0) {
+    return {
+      toast: '✅ You already voted for this entry.',
+      alert: true
+    };
+  }
+
+  // Increase the vote count only after a successful insertion.
   await q(
     env,
-    `UPDATE submissions SET votes = votes + 1 WHERE id = ?`,
+    `UPDATE submissions
+     SET votes = votes + 1
+     WHERE id = ?`,
     [subId]
   );
 
