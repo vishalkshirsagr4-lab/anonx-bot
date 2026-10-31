@@ -51,7 +51,9 @@ function fmtArgs(args) {
 
     if (typeof a === 'number') {
       if (!Number.isFinite(a)) {
-        throw new Error('SQL arguments cannot contain NaN or Infinity.');
+        throw new Error(
+          'SQL arguments cannot contain NaN or Infinity.'
+        );
       }
 
       return Number.isInteger(a)
@@ -173,45 +175,217 @@ export const batch = async (env, stmts) => {
 
 // ─── Database schema ───
 const SCHEMA = [
-  `CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value TEXT, expires_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS kv_store (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    expires_at INTEGER
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS groups (chat_id TEXT PRIMARY KEY, title TEXT, updated_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS groups (
+    chat_id TEXT PRIMARY KEY,
+    title TEXT,
+    updated_at INTEGER
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS posts (post_id TEXT PRIMARY KEY, owner_id INTEGER, msg_id INTEGER, chat_id TEXT, thread_id TEXT, created_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS posts (
+    post_id TEXT PRIMARY KEY,
+    owner_id INTEGER,
+    msg_id INTEGER,
+    chat_id TEXT,
+    thread_id TEXT,
+    created_at INTEGER
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS threads (thread_id TEXT PRIMARY KEY, last_active INTEGER, users_json TEXT, next_count INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS threads (
+    thread_id TEXT PRIMARY KEY,
+    last_active INTEGER,
+    users_json TEXT,
+    next_count INTEGER
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, user_id INTEGER, name TEXT, username TEXT, text TEXT, action TEXT)`,
+  `CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER,
+    user_id INTEGER,
+    name TEXT,
+    username TEXT,
+    text TEXT,
+    action TEXT
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, first_name TEXT, username TEXT, coins INTEGER DEFAULT 0, dm_open INTEGER DEFAULT 0, created_at INTEGER, updated_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    first_name TEXT,
+    username TEXT,
+    coins INTEGER DEFAULT 0,
+    dm_open INTEGER DEFAULT 0,
+    created_at INTEGER,
+    updated_at INTEGER
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS reveals (user_id INTEGER, post_id TEXT, mode TEXT, ts INTEGER, PRIMARY KEY (user_id, post_id))`,
+  `CREATE TABLE IF NOT EXISTS reveals (
+    user_id INTEGER,
+    post_id TEXT,
+    mode TEXT,
+    ts INTEGER,
+    PRIMARY KEY (user_id, post_id)
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS group_members (chat_id TEXT, user_id INTEGER, first_name TEXT, last_seen INTEGER, PRIMARY KEY (chat_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS group_members (
+    chat_id TEXT,
+    user_id INTEGER,
+    first_name TEXT,
+    last_seen INTEGER,
+    PRIMARY KEY (chat_id, user_id)
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS group_settings (chat_id TEXT PRIMARY KEY, vote_min INTEGER, submit_min INTEGER, announce_min INTEGER, next_announce_ts INTEGER, last_contest_id INTEGER, min_join INTEGER, remind_min INTEGER, remind_last_ts INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS group_settings (
+    chat_id TEXT PRIMARY KEY,
+    vote_min INTEGER,
+    submit_min INTEGER,
+    announce_min INTEGER,
+    next_announce_ts INTEGER,
+    last_contest_id INTEGER,
+    min_join INTEGER,
+    remind_min INTEGER,
+    remind_last_ts INTEGER
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS contests (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, image_url TEXT, rank_key TEXT, p1 INTEGER, p2 INTEGER, p3 INTEGER, ps INTEGER, created_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS contests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    image_url TEXT,
+    rank_key TEXT,
+    p1 INTEGER,
+    p2 INTEGER,
+    p3 INTEGER,
+    ps INTEGER,
+    created_at INTEGER
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS contest_bag (chat_id TEXT, contest_id INTEGER, PRIMARY KEY (chat_id, contest_id))`,
+  `CREATE TABLE IF NOT EXISTS contest_bag (
+    chat_id TEXT,
+    contest_id INTEGER,
+    PRIMARY KEY (chat_id, contest_id)
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS runs (run_id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, contest_id INTEGER, name TEXT, rank_key TEXT, image_url TEXT, p1 INTEGER, p2 INTEGER, p3 INTEGER, ps INTEGER, status TEXT, start_ts INTEGER, end_ts INTEGER, vote_min INTEGER, vote_end_ts INTEGER, rem_stage INTEGER DEFAULT 0, announce_msg_id INTEGER, min_join INTEGER, remind_last_ts INTEGER, created_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS runs (
+    run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT,
+    contest_id INTEGER,
+    name TEXT,
+    rank_key TEXT,
+    image_url TEXT,
+    p1 INTEGER,
+    p2 INTEGER,
+    p3 INTEGER,
+    ps INTEGER,
+    status TEXT,
+    start_ts INTEGER,
+    end_ts INTEGER,
+    vote_min INTEGER,
+    vote_end_ts INTEGER,
+    rem_stage INTEGER DEFAULT 0,
+    announce_msg_id INTEGER,
+    min_join INTEGER,
+    remind_last_ts INTEGER,
+    created_at INTEGER
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS participants (run_id INTEGER, user_id INTEGER, joined_at INTEGER, PRIMARY KEY (run_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS participants (
+    run_id INTEGER,
+    user_id INTEGER,
+    joined_at INTEGER,
+    PRIMARY KEY (run_id, user_id)
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS submissions (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER, user_id INTEGER, content_json TEXT, first_ts INTEGER, last_ts INTEGER, edits INTEGER DEFAULT 0, post_msg_id INTEGER, number INTEGER, votes INTEGER DEFAULT 0, UNIQUE (run_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER,
+    user_id INTEGER,
+    content_json TEXT,
+    first_ts INTEGER,
+    last_ts INTEGER,
+    edits INTEGER DEFAULT 0,
+    post_msg_id INTEGER,
+    number INTEGER,
+    votes INTEGER DEFAULT 0,
+    UNIQUE (run_id, user_id)
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS sub_history (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER, user_id INTEGER, ts INTEGER, content_json TEXT)`,
+  `CREATE TABLE IF NOT EXISTS sub_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER,
+    user_id INTEGER,
+    ts INTEGER,
+    content_json TEXT
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS votes (sub_id INTEGER, voter_id INTEGER, ts INTEGER, PRIMARY KEY (sub_id, voter_id))`,
+  `CREATE TABLE IF NOT EXISTS votes (
+    sub_id INTEGER,
+    voter_id INTEGER,
+    ts INTEGER,
+    PRIMARY KEY (sub_id, voter_id)
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS preregs (chat_id TEXT, user_id INTEGER, ts INTEGER, PRIMARY KEY (chat_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS preregs (
+    chat_id TEXT,
+    user_id INTEGER,
+    ts INTEGER,
+    PRIMARY KEY (chat_id, user_id)
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS claims (user_id INTEGER PRIMARY KEY, last_day INTEGER, total INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS claims (
+    user_id INTEGER PRIMARY KEY,
+    last_day INTEGER,
+    total INTEGER DEFAULT 0
+  )`,
 
-  `CREATE TABLE IF NOT EXISTS wins (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, run_id INTEGER, chat_id TEXT, place INTEGER, prize INTEGER, ts INTEGER)`,
-  
-  `CREATE TABLE IF NOT EXISTS wins (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, run_id INTEGER, chat_id TEXT, place INTEGER, prize INTEGER, ts INTEGER)`
+  `CREATE TABLE IF NOT EXISTS wins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    run_id INTEGER,
+    chat_id TEXT,
+    place INTEGER,
+    prize INTEGER,
+    ts INTEGER
+  )`,
+
+  // ─── Reward idempotency table ───
+  `CREATE TABLE IF NOT EXISTS run_rewards (
+    run_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    reward_type TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    chat_id TEXT,
+    place INTEGER,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, user_id, reward_type)
+  )`,
+
+  // ─── Automatic reward crediting trigger ───
+  `CREATE TRIGGER IF NOT EXISTS trg_run_rewards_credit
+   AFTER INSERT ON run_rewards
+   BEGIN
+     INSERT INTO users
+       (user_id, first_name, coins, created_at, updated_at)
+     VALUES
+       (NEW.user_id, '', NEW.amount, NEW.created_at, NEW.created_at)
+     ON CONFLICT(user_id) DO UPDATE SET
+       coins = users.coins + NEW.amount,
+       updated_at = NEW.created_at;
+
+     INSERT INTO wins
+       (user_id, run_id, chat_id, place, prize, ts)
+     SELECT
+       NEW.user_id,
+       NEW.run_id,
+       NEW.chat_id,
+       NEW.place,
+       NEW.amount,
+       NEW.created_at
+     WHERE NEW.reward_type = 'winner';
+   END`
 ];
 
 // ─── Database initialization ───
