@@ -1,3 +1,4 @@
+
 name = "anonx-bot"
 main = "src/worker.js"
 compatibility_date = "2024-11-01"
@@ -11,3 +12,6 @@ BOT_NAME = "AnonX"
 MULTI_ANON = "true"
 ANON_SHUFFLE_MODE = "false"
 TOPIC_END_IDLE_MINUTES = "10"
+
+[triggers]
+crons = ["* * * * *"]
