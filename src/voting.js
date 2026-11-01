@@ -5,6 +5,7 @@ import { q } from './db.js';
 import { send } from './cards.js';
 import { advanceToVoting, finishRun } from './contest.js';
 import { isAdmin, esc, fmtTime, fmtDur } from './helpers.js';
+import { sendSubmissionEntry } from './media.js';
 
 async function canManage(env, chatId, userId) {
   return isOwner(userId) || await isAdmin(env, chatId, userId);
@@ -62,6 +63,44 @@ export async function handleVotingCommand(env, msg, cmd) {
         reply_to_message_id: msg.message_id
       });
     }
+  }
+
+  if (cmd.name === 'vote') {
+    const run = await findRun(env, chatId, runId, ['voting']);
+    if (!run) {
+      return send(env, chatId, '🗳 No active voting round in this group. Check /contest or /voting.', {
+        reply_to_message_id: msg.message_id
+      });
+    }
+
+    const subs = (await q(env,
+      `SELECT * FROM submissions WHERE run_id = ? ORDER BY first_ts ASC`,
+      [run.run_id])).rows;
+
+    if (!subs.length) {
+      return send(env, chatId, '📭 No participant submissions were found for this contest.', {
+        reply_to_message_id: msg.message_id
+      });
+    }
+
+    await send(env, chatId,
+      `🗳 <b>Vote for one participant</b>\\n\\n🏆 <b>${esc(run.name)}</b> · #${run.run_id}\\nEach member can vote only once. Your own entry cannot be selected.\\n⌛ Voting closes: <b>${fmtTime(run.vote_end_ts)}</b>`,
+      { reply_to_message_id: msg.message_id });
+
+    let number = 1;
+    for (const sub of subs) {
+      const markup = { inline_keyboard: [[{
+        text: '🗳 Vote for this participant',
+        callback_data: `vote_${sub.id}`
+      }]] };
+      const sent = await sendSubmissionEntry(env, chatId, sub, number, markup);
+      if (sent?.ok) {
+        await q(env, `UPDATE submissions SET post_msg_id = ?, number = ? WHERE id = ?`,
+          [sent.result.message_id, number, sub.id]);
+      }
+      number++;
+    }
+    return;
   }
 
   if (cmd.name === 'votestart') {
