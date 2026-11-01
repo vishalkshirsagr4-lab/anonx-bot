@@ -13,7 +13,7 @@ export function getHelp() {
     },
     contest: {
       title: '🏆 Contest',
-      cmds: `<b>🏆 Contest</b>\n\n/contest — Current contest status\n/submit — Submit your entry in DM\n<b>🎯 Participate</b> — Join a contest\n/leaderboard — Top 10 rankings\n/wallet — Coin balance`,
+      cmds: `<b>🏆 Contest</b>\n\n/contest — Current contest status\n/voting — Live voting status\n/voteresult — Current standings or final results\n/submit — Submit your entry in DM\n<b>🎯 Participate</b> — Join a contest\n/leaderboard — Top 10 rankings\n/wallet — Coin balance`,
       rules: `<b>📜 Rules & Modes</b>\n\n1. Submissions are 100% anonymous.\n2. Three Contest Modes:\n   • 🖼️ <b>Image</b>: Photos\n   • ✍️ <b>Text</b>: Written answers\n   • 🎬 <b>Media</b>: Photos, Stickers, Videos, GIFs, Voice, Audio, Docs & more!\n3. Vote before the deadline.\n4. You cannot vote for your own entry.\n5. Min ${CFG.MIN_JOIN_DEFAULT} participants required.`,
     },
     setting: {
@@ -28,7 +28,7 @@ export function getHelp() {
     },
     owner: {
       title: '👑 Owner',
-      cmds: `<b>👑 Owner</b>\n\n/addcontest — Add one\n/add — Reply to .txt to bulk-add\n/listcontest — List\n/delcontest — Delete\n/xcontest — Force-start\n/deldb — Wipe DB (password)`,
+      cmds: `<b>👑 Owner</b>\n\n/addcontest — Add one\n/add — Reply to .txt to bulk-add\n/listcontest — List\n/delcontest — Delete\n/xcontest — Force-start\n/votestart — Start voting early (group)\n/voteend — End voting and publish results (group)\n/deldb — Wipe DB (password)`,
       rules: `<b>📜 Format</b>\n\n<code>image_url - Name - x, y, z, s</code>`,
     },
   };
