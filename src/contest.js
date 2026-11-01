@@ -578,17 +578,36 @@ export async function handleVote(env, cq, subId) {
     };
   }
 
+  const previousVote = await q(
+    env,
+    `SELECT v.sub_id
+     FROM votes v
+     JOIN submissions s ON s.id = v.sub_id
+     WHERE v.run_id = ? AND v.voter_id = ?
+     LIMIT 1`,
+    [run.run_id, userId]
+  );
+
+  if (previousVote.rows.length) {
+    return {
+      toast: Number(previousVote.rows[0].sub_id) === Number(subId)
+        ? '✅ You already voted for this entry.'
+        : '🚫 You have already voted in this contest. Only one vote is allowed.',
+      alert: true
+    };
+  }
+
   const voteResult = await q(
     env,
     `INSERT OR IGNORE INTO votes
-     (sub_id, voter_id, ts)
-     VALUES (?, ?, ?)`,
-    [subId, userId, Date.now()]
+     (sub_id, voter_id, run_id, ts)
+     VALUES (?, ?, ?, ?)`,
+    [subId, userId, run.run_id, Date.now()]
   );
 
   if (voteResult.rowsAffected === 0) {
     return {
-      toast: '✅ You already voted for this entry.',
+      toast: '🚫 You have already voted in this contest.',
       alert: true
     };
   }
