@@ -1,0 +1,124 @@
+// src/voting.js
+// Group-admin controls for contest voting phases and live/final standings.
+import { isOwner } from './config.js';
+import { q } from './db.js';
+import { send } from './cards.js';
+import { advanceToVoting, finishRun } from './contest.js';
+import { isAdmin, esc, fmtTime, fmtDur } from './helpers.js';
+
+async function canManage(env, chatId, userId) {
+  return isOwner(userId) || await isAdmin(env, chatId, userId);
+}
+
+async function findRun(env, chatId, runId, statuses) {
+  if (runId) {
+    const result = await q(env,
+      `SELECT * FROM runs WHERE run_id = ? AND chat_id = ? LIMIT 1`,
+      [runId, String(chatId)]);
+    const run = result.rows[0];
+    return run && statuses.includes(run.status) ? run : null;
+  }
+
+  const marks = statuses.map(() => '?').join(', ');
+  const result = await q(env,
+    `SELECT * FROM runs WHERE chat_id = ? AND status IN (${marks}) ORDER BY run_id DESC LIMIT 1`,
+    [String(chatId), ...statuses]);
+  return result.rows[0] || null;
+}
+
+function parseRunId(arg) {
+  if (!arg) return null;
+  const id = Number(arg.trim().replace(/^#/, ''));
+  return Number.isSafeInteger(id) && id > 0 ? id : NaN;
+}
+
+async function standings(env, run) {
+  return (await q(env,
+    `SELECT s.id, s.user_id, s.votes, s.first_ts,
+            COALESCE(NULLIF(u.first_name, ''), 'Participant') AS first_name,
+            u.username
+     FROM submissions s
+     LEFT JOIN users u ON u.user_id = s.user_id
+     WHERE s.run_id = ?
+     ORDER BY s.votes DESC, s.first_ts ASC
+     LIMIT 20`,
+    [run.run_id])).rows;
+}
+
+export async function handleVotingCommand(env, msg, cmd) {
+  const chatId = String(msg.chat.id);
+  const userId = msg.from.id;
+  const runId = parseRunId(cmd.arg || '');
+
+  if (Number.isNaN(runId)) {
+    return send(env, chatId, '❌ Invalid contest ID. Use a positive ID, for example /voteend 12.', {
+      reply_to_message_id: msg.message_id
+    });
+  }
+
+  if (['votestart', 'voteend'].includes(cmd.name)) {
+    if (!(await canManage(env, chatId, userId))) {
+      return send(env, chatId, '⛔ Only this group’s admins or the bot owner can control voting.', {
+        reply_to_message_id: msg.message_id
+      });
+    }
+  }
+
+  if (cmd.name === 'votestart') {
+    const run = await findRun(env, chatId, runId, ['submission']);
+    if (!run) return send(env, chatId, 'ℹ️ No contest is currently accepting submissions in this group.', {
+      reply_to_message_id: msg.message_id
+    });
+
+    await advanceToVoting(env, run);
+    return send(env, chatId,
+      `✅ Voting has been started manually for <b>${esc(run.name)}</b> (Contest #${run.run_id}).`,
+      { reply_to_message_id: msg.message_id });
+  }
+
+  if (cmd.name === 'voteend') {
+    const run = await findRun(env, chatId, runId, ['voting']);
+    if (!run) return send(env, chatId, 'ℹ️ No active voting round was found. Use /voting to check the current status.', {
+      reply_to_message_id: msg.message_id
+    });
+
+    await finishRun(env, run);
+    return;
+  }
+
+  if (cmd.name === 'voting' || cmd.name === 'voteresult') {
+    const run = runId
+      ? await findRun(env, chatId, runId, ['submission', 'voting', 'done'])
+      : await findRun(env, chatId, null, ['voting', 'submission', 'done']);
+
+    if (!run) return send(env, chatId, '📭 No contest found. Start or check a contest with /contest.', {
+      reply_to_message_id: msg.message_id
+    });
+
+    const rows = await standings(env, run);
+    const totalVotes = rows.reduce((sum, row) => sum + Number(row.votes || 0), 0);
+    const medals = ['🥇', '🥈', '🥉'];
+    const lines = rows.length
+      ? rows.slice(0, 10).map((row, index) => {
+          const label = row.username ? '@' + esc(row.username) : esc(row.first_name);
+          return `${medals[index] || (index + 1) + '.'} <b>${label}</b> — <b>${Number(row.votes || 0)}</b> votes`;
+        }).join('\n')
+      : 'No entries have been submitted yet.';
+
+    const phase = run.status === 'submission'
+      ? `📝 Submissions open · ends ${fmtTime(run.end_ts)}`
+      : run.status === 'voting'
+      ? `🗳 Voting open · ${fmtDur(run.vote_end_ts - Date.now())} remaining`
+      : '🏁 Contest completed';
+
+    return send(env, chatId,
+      `📊 <b>${cmd.name === 'voting' ? 'Voting Status' : 'Contest Results'}</b>\n\n` +
+      `🏆 <b>${esc(run.name)}</b> · #${run.run_id}\n` +
+      `${phase}\n\n` +
+      `👥 Entries: <b>${rows.length}</b>\n` +
+      `🗳 Total votes: <b>${totalVotes}</b>\n\n` +
+      `<b>Current ranking</b>\n${lines}` +
+      (run.status === 'voting' ? '\n\n<i>Ranking updates when this command is run again.</i>' : ''),
+      { reply_to_message_id: msg.message_id });
+  }
+}
