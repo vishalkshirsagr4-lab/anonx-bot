@@ -13,8 +13,8 @@ export function getHelp() {
     },
     contest: {
       title: '🏆 Contest',
-      cmds: `<b>🏆 Contest</b>\n\n/contest — Current contest\n/submit — Submit in DM\n<b>Participate</b> — Join\n/leaderboard — Top 10\n/wallet — Coins`,
-      rules: `<b>📜 Rules</b>\n\n1. Submissions anonymous.\n2. Vote before end.\n3. Cannot vote your own.\n4. Min ${CFG.MIN_JOIN_DEFAULT} participants or cancelled.`,
+      cmds: `<b>🏆 Contest</b>\n\n/contest — Current contest status\n/submit — Submit your entry in DM\n<b>🎯 Participate</b> — Join a contest\n/leaderboard — Top 10 rankings\n/wallet — Coin balance`,
+      rules: `<b>📜 Rules & Modes</b>\n\n1. Submissions are 100% anonymous.\n2. Three Contest Modes:\n   • 🖼️ <b>Image</b>: Photos\n   • ✍️ <b>Text</b>: Written answers\n   • 🎬 <b>Media</b>: Photos, Stickers, Videos, GIFs, Voice, Audio, Docs & more!\n3. Vote before the deadline.\n4. You cannot vote for your own entry.\n5. Min ${CFG.MIN_JOIN_DEFAULT} participants required.`,
     },
     setting: {
       title: '⚙️ Settings',

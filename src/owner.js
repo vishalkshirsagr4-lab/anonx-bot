@@ -62,20 +62,358 @@ export async function addContestStart(env, chatId, userId) {
   await kvPut(
     env,
     `pending_addcontest:${userId}`,
-    { step: 'waiting_line' },
+    {
+      step: 'step_image',
+      file_id: null,
+      name: '',
+      submission_type: 'image',
+      submit_hours: 24,
+      p1: 0,
+      p2: 0,
+      p3: 0,
+      ps: 0
+    },
     600
   );
 
   return send(
     env,
     chatId,
-    `➕ <b>Add Contest</b>\n\nSend one line in this format:\n\n<code>image_url - Name - x, y, z, s</code>\n\n• <code>x,y,z</code> = 1st/2nd/3rd prizes\n• <code>s</code> = participation reward\n\nOptional 4th field: <code>rank_key</code>\n<code>image_url - Name - x, y, z, s - epic</code>\n\n/cancel to abort.`,
+    `➕ <b>Create New Contest</b>\n\n` +
+    `Step 1/7 — Upload the contest image.\n\n` +
+    `Please upload a photo from your device gallery.\n\n` +
+    `Send /skip if you want to create a contest without an image.\n\n` +
+    `Send /cancel to stop.`,
     { plain: true }
   );
 }
 
+export async function handleContestWizard(env, msg, userId, pending) {
+  const chatId = msg.chat.id;
+  const text = (msg.text || '').trim();
+
+  // Any step can be cancelled with /cancel
+  if (text.toLowerCase() === '/cancel') {
+    await kvDel(env, `pending_addcontest:${userId}`);
+    return send(env, chatId, `✅ Contest creation cancelled.`);
+  }
+
+  if (!pending) {
+    return send(env, chatId, `❌ No active contest creation in progress. Use /addcontest to start.`);
+  }
+
+  const step = pending.step || 'step_image';
+
+  // ─── Step 1: Image Upload ───
+  if (step === 'step_image') {
+    let fileId = null;
+    if (text.toLowerCase() === '/skip') {
+      fileId = null;
+    } else if (msg.photo && Array.isArray(msg.photo) && msg.photo.length > 0) {
+      fileId = msg.photo[msg.photo.length - 1].file_id;
+    } else {
+      return send(
+        env,
+        chatId,
+        `Please upload a photo from your device gallery, or send /skip to continue without an image, or send /cancel to stop.`
+      );
+    }
+
+    pending.file_id = fileId;
+    pending.step = 'step_name';
+    await kvPut(env, `pending_addcontest:${userId}`, pending, 600);
+
+    return send(
+      env,
+      chatId,
+      `Step 2/7 — Enter the contest name.`
+    );
+  }
+
+  // ─── Step 2: Contest Name ───
+  if (step === 'step_name') {
+    if (!text) {
+      return send(
+        env,
+        chatId,
+        `❌ Contest name cannot be empty. Please enter a valid name.`
+      );
+    }
+    if (text.length > 100) {
+      return send(
+        env,
+        chatId,
+        `❌ Contest name is too long (maximum 100 characters). Please enter a shorter name.`
+      );
+    }
+
+    pending.name = text;
+    pending.step = 'step_type';
+    await kvPut(env, `pending_addcontest:${userId}`, pending, 600);
+
+    return send(
+      env,
+      chatId,
+      `Step 3/7 — Choose the submission type.\n\n` +
+      `1. Image — Participants must upload a photo from their device.\n` +
+      `2. Text — Participants must submit a written answer.\n` +
+      `3. Media — Participants can submit supported Telegram media (photos, stickers, videos, GIFs, voice, audio, documents).`
+    );
+  }
+
+  // ─── Step 3: Submission Type ───
+  if (step === 'step_type') {
+    const val = text.toLowerCase();
+    let subType = null;
+    if (val === '1' || val === 'image' || val === 'photo' || val === 'img') {
+      subType = 'image';
+    } else if (val === '2' || val === 'text' || val === 'written' || val === 'txt') {
+      subType = 'text';
+    } else if (val === '3' || val === 'media' || val === 'universal') {
+      subType = 'media';
+    } else {
+      return send(
+        env,
+        chatId,
+        `❌ Please choose a valid submission type:\n` +
+        `1. Image — Participants must upload a photo from their device.\n` +
+        `2. Text — Participants must submit a written answer.\n` +
+        `3. Media — Participants can submit supported Telegram media (photos, stickers, videos, GIFs, voice, audio, documents).`
+      );
+    }
+
+    pending.submission_type = subType;
+    pending.step = 'step_duration';
+    await kvPut(env, `pending_addcontest:${userId}`, pending, 600);
+
+    return send(
+      env,
+      chatId,
+      `Step 4/7 — How many hours should participants have to submit their entries?\n\n` +
+      `Example: 4, 7, or 10.`
+    );
+  }
+
+  // ─── Step 4: Submission Duration ───
+  if (step === 'step_duration') {
+    const hours = Number(text);
+    if (!Number.isInteger(hours) || hours <= 0 || hours > 168) {
+      return send(
+        env,
+        chatId,
+        `❌ Please enter a positive whole number of hours between 1 and 168 (e.g. 4, 7, 10, 24).`
+      );
+    }
+
+    pending.submit_hours = hours;
+    pending.step = 'step_p1';
+    await kvPut(env, `pending_addcontest:${userId}`, pending, 600);
+
+    return send(
+      env,
+      chatId,
+      `Step 5/7 — Enter the 1st prize amount.`
+    );
+  }
+
+  // ─── Step 5a: 1st Prize ───
+  if (step === 'step_p1') {
+    const p1 = Number(text);
+    if (!Number.isInteger(p1) || p1 < 0) {
+      return send(
+        env,
+        chatId,
+        `❌ Please enter a valid non-negative whole number for 1st prize (e.g. 500).`
+      );
+    }
+
+    pending.p1 = p1;
+    pending.step = 'step_p2';
+    await kvPut(env, `pending_addcontest:${userId}`, pending, 600);
+
+    return send(
+      env,
+      chatId,
+      `Enter the 2nd prize amount.`
+    );
+  }
+
+  // ─── Step 5b: 2nd Prize ───
+  if (step === 'step_p2') {
+    const p2 = Number(text);
+    if (!Number.isInteger(p2) || p2 < 0) {
+      return send(
+        env,
+        chatId,
+        `❌ Please enter a valid non-negative whole number for 2nd prize (e.g. 300).`
+      );
+    }
+
+    pending.p2 = p2;
+    pending.step = 'step_p3';
+    await kvPut(env, `pending_addcontest:${userId}`, pending, 600);
+
+    return send(
+      env,
+      chatId,
+      `Enter the 3rd prize amount.`
+    );
+  }
+
+  // ─── Step 5c: 3rd Prize ───
+  if (step === 'step_p3') {
+    const p3 = Number(text);
+    if (!Number.isInteger(p3) || p3 < 0) {
+      return send(
+        env,
+        chatId,
+        `❌ Please enter a valid non-negative whole number for 3rd prize (e.g. 200).`
+      );
+    }
+
+    pending.p3 = p3;
+    pending.step = 'step_ps';
+    await kvPut(env, `pending_addcontest:${userId}`, pending, 600);
+
+    return send(
+      env,
+      chatId,
+      `Enter the participation prize amount.\n\n` +
+      `Every participant who successfully submits a valid entry will receive this reward, even if they do not win 1st, 2nd, or 3rd place.`
+    );
+  }
+
+  // ─── Step 5d: Participation Prize & Step 6 Review Preview ───
+  if (step === 'step_ps') {
+    const ps = Number(text);
+    if (!Number.isInteger(ps) || ps < 0) {
+      return send(
+        env,
+        chatId,
+        `❌ Please enter a valid non-negative whole number for participation prize (e.g. 50).`
+      );
+    }
+
+    pending.ps = ps;
+    pending.step = 'step_confirm';
+    await kvPut(env, `pending_addcontest:${userId}`, pending, 600);
+
+    const imageStatus = pending.file_id ? 'Uploaded' : 'No image';
+    const subTypeLabel =
+      pending.submission_type === 'image'
+        ? 'Image'
+        : pending.submission_type === 'text'
+        ? 'Text'
+        : 'Media';
+
+    const reviewText =
+      `📋 <b>Contest Review</b>\n\n` +
+      `🖼 Contest image: ${imageStatus}\n` +
+      `🏆 Contest name: ${esc(pending.name)}\n` +
+      `📤 Submission type: ${subTypeLabel}\n` +
+      `⏱ Submission duration: ${pending.submit_hours} hours\n\n` +
+      `🥇 1st Prize: ${pending.p1}\n` +
+      `🥈 2nd Prize: ${pending.p2}\n` +
+      `🥉 3rd Prize: ${pending.p3}\n` +
+      `🎁 Participation Prize: ${pending.ps}\n\n` +
+      `Every valid participant who submits an entry receives the participation reward.\n\n` +
+      `Confirm: /confirm\n` +
+      `Cancel: /cancel`;
+
+    if (pending.file_id) {
+      const { tg } = await import('./telegram.js');
+      const photoSent = await tg(env, 'sendPhoto', {
+        chat_id: chatId,
+        photo: pending.file_id,
+        caption: reviewText,
+        parse_mode: 'HTML'
+      });
+      if (photoSent?.ok) return photoSent;
+    }
+
+    return send(env, chatId, reviewText, { plain: true });
+  }
+
+  // ─── Step 7: Confirm & Save ───
+  if (step === 'step_confirm') {
+    if (text.toLowerCase() === '/confirm') {
+      if (!pending.name || !pending.submit_hours) {
+        await kvDel(env, `pending_addcontest:${userId}`);
+        return send(env, chatId, `❌ Incomplete contest data. Please restart with /addcontest.`);
+      }
+
+      const rankKey = pending.rank_key || 'com';
+      const now = Date.now();
+
+      const insertRes = await q(
+        env,
+        `INSERT INTO contests
+          (name, image_url, rank_key, mode, submission_type, submit_hours, p1, p2, p3, ps, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          pending.name,
+          pending.file_id,
+          rankKey,
+          pending.submission_type,
+          pending.submission_type,
+          pending.submit_hours,
+          pending.p1,
+          pending.p2,
+          pending.p3,
+          pending.ps,
+          now
+        ]
+      );
+
+      const contestId = insertRes.lastId;
+
+      // Sync into contest_bag for all existing groups so it is immediately active in group rotations
+      try {
+        await q(
+          env,
+          `INSERT OR IGNORE INTO contest_bag (chat_id, contest_id)
+           SELECT chat_id, ? FROM groups`,
+          [contestId]
+        );
+      } catch (err) {
+        console.warn('Contest bag auto-sync warning:', err.message);
+      }
+
+      // Delete wizard state (prevents duplicate creation if /confirm is sent again)
+      await kvDel(env, `pending_addcontest:${userId}`);
+
+      const subTypeLabel =
+        pending.submission_type === 'image'
+          ? 'Image'
+          : pending.submission_type === 'text'
+          ? 'Text'
+          : 'Media';
+
+      return send(
+        env,
+        chatId,
+        `✅ <b>Contest created successfully!</b> (ID: #${contestId})\n\n` +
+        `🏆 <b>${esc(pending.name)}</b>\n` +
+        `🖼 Image: ${pending.file_id ? 'Uploaded' : 'No image'}\n` +
+        `📤 Submission Type: <b>${subTypeLabel}</b>\n` +
+        `⏱ Submission Duration: <b>${pending.submit_hours} hours</b>\n` +
+        `🎁 Prizes: 🥇 ${pending.p1} • 🥈 ${pending.p2} • 🥉 ${pending.p3} • 🎁 ${pending.ps}\n\n` +
+        `<i>Contest has been added to the rotation and is ready for groups.</i>`
+      );
+    }
+
+    return send(
+      env,
+      chatId,
+      `Please send /confirm to save this contest, or /cancel to abort.`
+    );
+  }
+}
+
 export async function ownerAddOne(env, chatId, userId, pending, text) {
-  const result = await addContestOne(env, text);
+  // Backwards-compatible legacy line adder
+  const chosenMode = (pending && pending.mode) || 'image';
+  const result = await addContestOne(env, text, chosenMode);
 
   await kvDel(env, `pending_addcontest:${userId}`);
 
@@ -89,16 +427,17 @@ export async function ownerAddOne(env, chatId, userId, pending, text) {
   }
 
   const data = result.data;
+  const modeText = data.submission_type === 'text' ? '✍️ Text' : '🖼️ Image';
 
   return send(
     env,
     chatId,
-    `✅ Contest added!\n\n<b>${esc(data.name)}</b>\n🏆 Rank: ${esc(data.rank_key)}\n🎁 Prizes: ${data.p1}/${data.p2}/${data.p3} + ${data.ps}`,
+    `✅ Contest added!\n\n<b>${esc(data.name)}</b>\n📁 Mode: <b>${modeText}</b>\n🏆 Rank: ${esc(data.rank_key)}\n🎁 Prizes: ${data.p1}/${data.p2}/${data.p3} + ${data.ps}`,
     { plain: true }
   );
 }
 
-export async function addContestOne(env, text) {
+export async function addContestOne(env, text, defaultMode = 'image') {
   if (typeof text !== 'string') {
     return { data: { error: 'Invalid contest data.' } };
   }
@@ -108,7 +447,7 @@ export async function addContestOne(env, text) {
   if (parts.length < 2) {
     return {
       data: {
-        error: 'Format: image_url - Name - x, y, z, s'
+        error: 'Format: image_url - Name - x, y, z, s [- rank_key] [- mode]'
       }
     };
   }
@@ -117,6 +456,11 @@ export async function addContestOne(env, text) {
   const name = parts[1];
   const prizePart = parts[2] || '';
   const rankKey = parts[3] || 'com';
+  let mode = defaultMode || 'image';
+
+  if (parts[4] && ['image', 'text', 'media'].includes(parts[4].toLowerCase())) {
+    mode = parts[4].toLowerCase();
+  }
 
   if (!validImageUrl(image_url)) {
     return {
@@ -158,15 +502,17 @@ export async function addContestOne(env, text) {
     };
   }
 
-  await q(
+  const insertRes = await q(
     env,
     `INSERT INTO contests
-      (name, image_url, rank_key, p1, p2, p3, ps, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (name, image_url, rank_key, mode, submission_type, submit_hours, p1, p2, p3, ps, created_at)
+     VALUES (?, ?, ?, ?, ?, 20, ?, ?, ?, ?, ?)`,
     [
       name,
       image_url,
       rankKey,
+      mode,
+      mode === 'text' ? 'text' : 'image',
       prizes[0],
       prizes[1],
       prizes[2],
@@ -177,9 +523,12 @@ export async function addContestOne(env, text) {
 
   return {
     data: {
+      id: insertRes.lastId,
       name,
       image_url,
       rank_key: rankKey,
+      mode,
+      submission_type: mode === 'text' ? 'text' : 'image',
       p1: prizes[0],
       p2: prizes[1],
       p3: prizes[2],
@@ -400,9 +749,16 @@ export async function listContests(env, chatId) {
     });
   }
 
-  const lines = r.rows.map(c =>
-    `#${c.id} — <b>${esc(c.name)}</b> [${esc(c.rank_key || 'com')}]\n  ${c.p1}/${c.p2}/${c.p3} + ${c.ps}`
-  );
+  const lines = r.rows.map(c => {
+    const typeLabel =
+      c.submission_type === 'text'
+        ? '✍️ Text'
+        : c.submission_type === 'media'
+        ? '🎬 Media'
+        : '🖼️ Image';
+    const hours = c.submit_hours ? `${c.submit_hours}h` : 'default';
+    return `#${c.id} — <b>${esc(c.name)}</b> [${typeLabel}, ${hours}]\n  Prizes: 🥇 ${c.p1} • 🥈 ${c.p2} • 🥉 ${c.p3} • 🎁 ${c.ps}`;
+  });
 
   return send(
     env,

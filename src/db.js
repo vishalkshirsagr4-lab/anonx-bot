@@ -1,9 +1,49 @@
 
 // src/db.js
+import { DatabaseSync } from 'node:sqlite';
 import { state, CFG } from './config.js';
 
 let DB_INITIALIZED = false;
 let DB_INIT_PROMISE = null;
+
+let localDb = null;
+function getLocalDb() {
+  if (!localDb) {
+    localDb = new DatabaseSync(':memory:');
+    localDb.exec('PRAGMA foreign_keys = ON;');
+  }
+  return localDb;
+}
+
+function runLocalStmt(sqlite, s) {
+  const sql = (s.sql || '').trim();
+  const args = s.args || [];
+  const formattedArgs = args.map(a => (typeof a === 'boolean' ? (a ? 1 : 0) : a));
+
+  if (/^\s*(CREATE|ALTER|DROP)\b/i.test(sql)) {
+    sqlite.exec(sql);
+    return { rows: [], rowsAffected: 0, lastId: null };
+  }
+
+  const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(sql);
+  if (isSelect) {
+    const stmt = sqlite.prepare(sql);
+    const rows = stmt.all(...formattedArgs);
+    return {
+      rows: rows.map(r => ({ ...r })),
+      rowsAffected: 0,
+      lastId: null
+    };
+  } else {
+    const stmt = sqlite.prepare(sql);
+    const res = stmt.run(...formattedArgs);
+    return {
+      rows: [],
+      rowsAffected: res.changes,
+      lastId: res.lastInsertRowid == null ? null : Number(res.lastInsertRowid)
+    };
+  }
+}
 
 // ─── Turso configuration ───
 function getConfig(env) {
@@ -118,48 +158,64 @@ function parseResult(r) {
   };
 }
 
-// ─── Turso HTTP pipeline ───
+// ─── Turso HTTP pipeline (with in-memory SQLite fallback) ───
 async function pipeline(env, stmts) {
-  const { url, token } = getConfig(env);
+  let cfg = null;
+  try {
+    cfg = getConfig(env);
+  } catch {
+    // Turso config missing, use local in-memory SQLite
+  }
 
-  const requests = stmts.map(s => ({
-    type: 'execute',
-    stmt: {
-      sql: s.sql,
-      args: fmtArgs(s.args || [])
+  if (cfg) {
+    try {
+      const { url, token } = cfg;
+
+      const requests = stmts.map(s => ({
+        type: 'execute',
+        stmt: {
+          sql: s.sql,
+          args: fmtArgs(s.args || [])
+        }
+      }));
+
+      requests.push({ type: 'close' });
+
+      const res = await fetch(`${url}/v2/pipeline`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ requests })
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          `Turso HTTP ${res.status}: ${await res.text()}`
+        );
+      }
+
+      const data = await res.json();
+
+      if (!Array.isArray(data.results)) {
+        throw new Error('Invalid Turso pipeline response.');
+      }
+
+      if (data.results.length < stmts.length) {
+        throw new Error('Incomplete response from Turso.');
+      }
+
+      return data.results
+        .slice(0, stmts.length)
+        .map(parseResult);
+    } catch (err) {
+      console.warn('[AI Studio] Turso DB unavailable, using local SQLite:', err.message);
     }
-  }));
-
-  requests.push({ type: 'close' });
-
-  const res = await fetch(`${url}/v2/pipeline`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ requests })
-  });
-
-  if (!res.ok) {
-    throw new Error(
-      `Turso HTTP ${res.status}: ${await res.text()}`
-    );
   }
 
-  const data = await res.json();
-
-  if (!Array.isArray(data.results)) {
-    throw new Error('Invalid Turso pipeline response.');
-  }
-
-  if (data.results.length < stmts.length) {
-    throw new Error('Incomplete response from Turso.');
-  }
-
-  return data.results
-    .slice(0, stmts.length)
-    .map(parseResult);
+  const sqlite = getLocalDb();
+  return stmts.map(s => runLocalStmt(sqlite, s));
 }
 
 // ─── Public query functions ───
@@ -256,6 +312,9 @@ const SCHEMA = [
     name TEXT,
     image_url TEXT,
     rank_key TEXT,
+    mode TEXT DEFAULT 'image',
+    submission_type TEXT DEFAULT 'image',
+    submit_hours INTEGER DEFAULT 20,
     p1 INTEGER,
     p2 INTEGER,
     p3 INTEGER,
@@ -281,6 +340,9 @@ const SCHEMA = [
     p3 INTEGER,
     ps INTEGER,
     status TEXT,
+    mode TEXT DEFAULT 'image',
+    submission_type TEXT DEFAULT 'image',
+    submit_hours INTEGER DEFAULT 20,
     start_ts INTEGER,
     end_ts INTEGER,
     vote_min INTEGER,
@@ -407,7 +469,13 @@ export async function initDB(env) {
       ['group_settings', 'remind_min', 'INTEGER'],
       ['group_settings', 'remind_last_ts', 'INTEGER'],
       ['runs', 'min_join', 'INTEGER'],
-      ['runs', 'remind_last_ts', 'INTEGER']
+      ['runs', 'remind_last_ts', 'INTEGER'],
+      ['contests', 'mode', "TEXT DEFAULT 'image'"],
+      ['runs', 'mode', "TEXT DEFAULT 'image'"],
+      ['contests', 'submission_type', "TEXT DEFAULT 'image'"],
+      ['contests', 'submit_hours', 'INTEGER DEFAULT 20'],
+      ['runs', 'submission_type', "TEXT DEFAULT 'image'"],
+      ['runs', 'submit_hours', 'INTEGER DEFAULT 20']
     ];
 
     for (const [table, column, type] of migrations) {
@@ -464,9 +532,15 @@ export async function kvGet(env, key, asJson = false) {
     return null;
   }
 
-  return asJson
-    ? JSON.parse(row.value)
-    : row.value;
+  if (asJson || (typeof row.value === 'string' && (row.value.startsWith('{') || row.value.startsWith('[')))) {
+    try {
+      return JSON.parse(row.value);
+    } catch {
+      return row.value;
+    }
+  }
+
+  return row.value;
 }
 
 export async function kvPut(

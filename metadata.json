@@ -1,0 +1,8 @@
+{
+  "name": "AnonX Bot",
+  "description": "Anonymous Q&A and Contest Bot on Telegram with web dashboard and admin controls",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

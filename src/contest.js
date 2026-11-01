@@ -4,6 +4,13 @@ import { q } from './db.js';
 import { tg } from './telegram.js';
 import { send } from './cards.js';
 import { esc, fmtDur, fmtTime, getBotInfo } from './helpers.js';
+import { sendSubmissionEntry } from './media.js';
+
+export function contestModeLabel(mode) {
+  if (mode === 'image') return '🖼️ Image (Photos)';
+  if (mode === 'text') return '✍️ Text (Written)';
+  return '🎬 Universal Media (Photos, Stickers, Videos, Audio & Docs)';
+}
 
 // ─── Join contest ───
 export async function handleJoin(env, from, runId) {
@@ -140,9 +147,18 @@ export async function groupContestStatus(env, chatId, replyTo) {
       )
     ).rows[0].n;
 
+    const subType = run.submission_type || run.mode || 'image';
+    const subTypeLabel =
+      subType === 'image'
+        ? '🖼 Image'
+        : subType === 'text'
+        ? '✍️ Text'
+        : '🎬 Universal Media';
+
     const caption =
       `🎮 <b>${esc(run.name)}</b>\n` +
-      `🏆 Rank: ${rankLabel(run.rank_key)}\n\n` +
+      `🏆 Rank: ${rankLabel(run.rank_key)}\n` +
+      `📤 Submission Type: <b>${subTypeLabel}</b>\n\n` +
       `👥 Joined: <b>${joined}/${run.min_join || CFG.MIN_JOIN_DEFAULT}</b>\n` +
       `📝 Submissions <b>open</b>\n` +
       `⌛ Ends in: <b>${fmtDur(run.end_ts - now)}</b>\n\n` +
@@ -213,12 +229,23 @@ export async function startRun(env, chatId, st, now) {
     [chatId]
   );
 
-  const bag = bagResult.rows[0];
+  let bag = bagResult.rows[0];
+
+  if (!bag) {
+    const fallback = await q(
+      env,
+      `SELECT * FROM contests ORDER BY RANDOM() LIMIT 1`
+    );
+    bag = fallback.rows[0];
+  }
 
   if (!bag) return false;
 
+  const submitHours = bag.submit_hours ? Number(bag.submit_hours) : null;
   const submitMin =
-    st.submit_min || Math.round(CFG.DEFAULT_SUBMIT_HOURS * 60);
+    submitHours && submitHours > 0
+      ? Math.round(submitHours * 60)
+      : (st.submit_min || Math.round(CFG.DEFAULT_SUBMIT_HOURS * 60));
 
   const voteMin =
     st.vote_min || Math.round(CFG.DEFAULT_VOTE_HOURS * 60);
@@ -227,21 +254,25 @@ export async function startRun(env, chatId, st, now) {
     st.min_join || CFG.MIN_JOIN_DEFAULT;
 
   const endTs = now + submitMin * 60000;
+  const submissionType = bag.submission_type || bag.mode || 'image';
 
   const res = await q(
     env,
     `INSERT INTO runs (
-      chat_id, contest_id, name, rank_key, image_url,
+      chat_id, contest_id, name, rank_key, image_url, mode, submission_type, submit_hours,
       p1, p2, p3, ps, status, start_ts, end_ts,
       vote_min, min_join, created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'submission', ?, ?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submission', ?, ?, ?, ?, ?)`,
     [
       chatId,
       bag.id,
       bag.name,
       bag.rank_key,
       bag.image_url,
+      submissionType,
+      submissionType,
+      submitHours,
       bag.p1,
       bag.p2,
       bag.p3,
@@ -265,11 +296,21 @@ export async function startRun(env, chatId, st, now) {
     const bi = await getBotInfo(env);
     const partUrl = `https://t.me/${bi.username}?start=join_${runId}`;
 
+    const subTypeLabel =
+      submissionType === 'image'
+        ? '🖼 Image'
+        : submissionType === 'text'
+        ? '✍️ Text'
+        : '🎬 Universal Media';
+    const durLabel = submitHours ? `${submitHours}h` : fmtDur(endTs - now);
+
     const caption =
       `🎮 <b>New Contest!</b>\n\n` +
       `<b>${esc(bag.name)}</b>\n` +
-      `🏆 Rank: ${rankLabel(bag.rank_key)}\n\n` +
-      `📝 Submission open until <b>${fmtTime(endTs)}</b>\n\n` +
+      `🏆 Rank: ${rankLabel(bag.rank_key)}\n` +
+      `📤 Submission Type: <b>${subTypeLabel}</b>\n` +
+      `⏱ Duration: <b>${durLabel}</b>\n` +
+      `📝 Submissions open until <b>${fmtTime(endTs)}</b>\n\n` +
       `🥇 ${bag.p1} • 🥈 ${bag.p2} • 🥉 ${bag.p3} • 🎁 ${bag.ps}\n` +
       `👥 Min participants: ${minJoin}`;
 
@@ -410,55 +451,13 @@ export async function advanceToVoting(env, run) {
   let num = 1;
 
   for (const s of subs) {
-    const c = JSON.parse(s.content_json || '{}');
-    const header = `#${num} — Anonymous Entry`;
-
-    const body = c.text
-      ? `<b>${esc(c.text)}</b>`
-      : `<i>[media]</i>`;
-
-    const msgText = `${header}\n\n${body}`;
-
     const kb = {
       inline_keyboard: [[
         { text: '🗳 Vote', callback_data: `vote_${s.id}` }
       ]]
     };
 
-    let sent;
-
-    if (c.file_id && c.kind === 'photo') {
-      sent = await tg(env, 'sendPhoto', {
-        chat_id: run.chat_id,
-        photo: c.file_id,
-        caption: msgText,
-        parse_mode: 'HTML',
-        reply_markup: kb
-      });
-    } else if (c.file_id && c.kind === 'video') {
-      sent = await tg(env, 'sendVideo', {
-        chat_id: run.chat_id,
-        video: c.file_id,
-        caption: msgText,
-        parse_mode: 'HTML',
-        reply_markup: kb
-      });
-    } else if (c.file_id && c.kind === 'document') {
-      sent = await tg(env, 'sendDocument', {
-        chat_id: run.chat_id,
-        document: c.file_id,
-        caption: msgText,
-        parse_mode: 'HTML',
-        reply_markup: kb
-      });
-    } else {
-      sent = await send(
-        env,
-        run.chat_id,
-        msgText,
-        { plain: true, reply_markup: kb }
-      );
-    }
+    const sent = await sendSubmissionEntry(env, run.chat_id, s, num, kb);
 
     if (sent?.ok) {
       await q(

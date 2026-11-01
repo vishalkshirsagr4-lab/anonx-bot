@@ -11,13 +11,14 @@ import { sendAnonMessage } from './anon.js';
 import {
   handleOwnerCmd, delcontestGroupView, startDeldb,
   addContestOne, handleDelContestDM, listContests, bulkAddStart, bulkAddFromFile,
-  deldbKeypadMarkup, ownerAddOne
+  deldbKeypadMarkup, ownerAddOne, handleContestWizard
 } from './owner.js';
 import {
   esc, userLink, genId, getBotInfo, isAdmin, listUserGroups,
   parseCommand, shouldTouch, logToTerminal, fmtClock, fmtTime, fmtDur,
   botIdentity
 } from './helpers.js';
+import { detectMedia, validateSubmissionForMode, formatMediaBadge } from './media.js';
 
 // ────────────────────────────────────────────────────────────
 // UPDATE ENTRY
@@ -146,10 +147,12 @@ async function handleDM(msg, env, ctx) {
     return;
   }
 
-  // Owner typed a contest line after /addcontest
-  if (!cmd && isOwner(userId) && text) {
-    const pend = await kvGet(env, `pending_addcontest:${userId}`, true);
-    if (pend) return ownerAddOne(env, chatId, userId, pend, text);
+  // Active owner /addcontest wizard session
+  if (isOwner(userId)) {
+    const pendContest = await kvGet(env, `pending_addcontest:${userId}`, true);
+    if (pendContest) {
+      return handleContestWizard(env, msg, userId, pendContest);
+    }
   }
 
   // Submit flow — user sends media/text after picking run
@@ -221,6 +224,8 @@ async function handleDM(msg, env, ctx) {
       case 'delcontest':
         if (!isOwner(userId)) return send(env, chatId, `⛔ Owner only.`);
         return handleDelContestDM(env, chatId, userId, cmd.arg);
+      case 'confirm':
+        return send(env, chatId, `❌ No active contest creation in progress. Use /addcontest to start.`);
       default:
         return send(env, chatId, `❓ Unknown command. Use /help.`);
     }
@@ -356,27 +361,117 @@ async function handleSubmitEntry(env, msg, runId) {
     return send(env, chatId, `⏰ Submission closed.`);
   }
 
-  let content = null;
-  if (msg.photo) content = { kind: 'photo', file_id: msg.photo[msg.photo.length - 1].file_id, caption: msg.caption || '' };
-  else if (msg.video) content = { kind: 'video', file_id: msg.video.file_id, caption: msg.caption || '' };
-  else if (msg.document) content = { kind: 'document', file_id: msg.document.file_id, caption: msg.caption || '' };
-  else if (msg.text) content = { kind: 'text', text: msg.text };
+  const subType = run.submission_type || run.mode || 'image';
 
-  if (!content) return send(env, chatId, `❌ Send text or media.`);
+  let content = null;
+
+  if (subType === 'image') {
+    if (!msg.photo || !Array.isArray(msg.photo) || msg.photo.length === 0) {
+      return send(
+        env,
+        chatId,
+        `This is an Image contest. Please upload a photo from your device.`
+      );
+    }
+    const photo = msg.photo[msg.photo.length - 1];
+    content = {
+      version: 1,
+      kind: 'photo',
+      file_id: photo.file_id,
+      file_unique_id: photo.file_unique_id || null,
+      caption: msg.caption || '',
+      text: '',
+      metadata: {
+        width: photo.width,
+        height: photo.height,
+        file_size: photo.file_size
+      }
+    };
+  } else if (subType === 'text') {
+    if (msg.photo || msg.video || msg.document || msg.voice || msg.audio || msg.sticker || msg.animation) {
+      return send(
+        env,
+        chatId,
+        `This is a Text contest. Please send your written answer.`
+      );
+    }
+    const textAnswer = (msg.text || '').trim();
+    if (!textAnswer) {
+      return send(
+        env,
+        chatId,
+        `This is a Text contest. Please send your written answer.`
+      );
+    }
+    content = {
+      version: 1,
+      kind: 'text',
+      file_id: null,
+      file_unique_id: null,
+      caption: '',
+      text: textAnswer,
+      metadata: {}
+    };
+  } else {
+    const detected = detectMedia(msg);
+    if (!detected || detected.kind === 'unknown') {
+      return send(env, chatId, `❌ Please send a valid submission.`);
+    }
+    content = {
+      version: 1,
+      kind: detected.kind,
+      file_id: detected.file_id,
+      file_unique_id: detected.file_unique_id,
+      caption: detected.caption,
+      text: detected.text,
+      metadata: detected.metadata
+    };
+  }
 
   const existing = await q(env, `SELECT id FROM submissions WHERE run_id = ? AND user_id = ?`, [runId, userId]);
   const now = Date.now();
+  const contentJson = JSON.stringify(content);
+  const badge = formatMediaBadge(content);
+
   if (existing.rows.length) {
-    await q(env, `UPDATE submissions SET content_json = ?, last_ts = ?, edits = edits + 1 WHERE id = ?`,
-      [JSON.stringify(content), now, existing.rows[0].id]);
-    return send(env, chatId, `🔄 Submission updated! You can update again before the deadline.`);
+    await q(
+      env,
+      `UPDATE submissions SET content_json = ?, last_ts = ?, edits = edits + 1 WHERE id = ?`,
+      [contentJson, now, existing.rows[0].id]
+    );
+    await q(
+      env,
+      `INSERT INTO sub_history (run_id, user_id, ts, content_json) VALUES (?, ?, ?, ?)`,
+      [runId, userId, now, contentJson]
+    );
+    return send(
+      env,
+      chatId,
+      `🔄 <b>Submission updated!</b>\n\nEntry: <b>${badge}</b>\nYou can update again anytime before the deadline.`
+    );
   }
-  await q(env, `INSERT INTO submissions (run_id, user_id, content_json, first_ts, last_ts) VALUES (?, ?, ?, ?, ?)`,
-    [runId, userId, JSON.stringify(content), now, now]);
-  await q(env, `INSERT OR IGNORE INTO participants (run_id, user_id, joined_at) VALUES (?, ?, ?)`,
-    [runId, userId, now]);
+
+  await q(
+    env,
+    `INSERT INTO submissions (run_id, user_id, content_json, first_ts, last_ts) VALUES (?, ?, ?, ?, ?)`,
+    [runId, userId, contentJson, now, now]
+  );
+  await q(
+    env,
+    `INSERT INTO sub_history (run_id, user_id, ts, content_json) VALUES (?, ?, ?, ?)`,
+    [runId, userId, now, contentJson]
+  );
+  await q(
+    env,
+    `INSERT OR IGNORE INTO participants (run_id, user_id, joined_at) VALUES (?, ?, ?)`,
+    [runId, userId, now]
+  );
   await kvDel(env, `pending_submit_run:${userId}`);
-  return send(env, chatId, `✅ Submission received!\n\nYou can edit until the deadline.`);
+  return send(
+    env,
+    chatId,
+    `✅ <b>Submission received!</b>\n\nEntry: <b>${badge}</b>\nYou can edit anytime until the deadline.`
+  );
 }
 
 // ────────────────────────────────────────────────────────────

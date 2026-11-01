@@ -291,6 +291,68 @@ export async function handleCallback(cq, env) {
       return;
     }
 
+    // ─── Add Contest Mode Wizard ───
+    if (data.startsWith('addc_mode_')) {
+      if (!isOwner(userId)) {
+        return tg(env, 'answerCallbackQuery', {
+          callback_query_id: cq.id,
+          text: '⛔ Owner only.',
+          show_alert: true
+        });
+      }
+
+      const mode = data.slice('addc_mode_'.length);
+      const { kvPut } = await import('./db.js');
+
+      await kvPut(
+        env,
+        `pending_addcontest:${userId}`,
+        { step: 'waiting_line', mode },
+        600
+      );
+
+      let modeInfo = '';
+      if (mode === 'image') {
+        modeInfo =
+          `🖼️ <b>Mode: Image Contest</b>\n` +
+          `• Participants will submit: <b>Photos / Images only</b>\n\n`;
+      } else if (mode === 'text') {
+        modeInfo =
+          `✍️ <b>Mode: Text Contest</b>\n` +
+          `• Participants will submit: <b>Written Answers only</b>\n\n`;
+      } else {
+        modeInfo =
+          `🎬 <b>Mode: Universal Media Contest</b>\n` +
+          `• Accepted media types:\n` +
+          `  - 🖼️ Photos & Images\n` +
+          `  - 🎭 Stickers (Static, Animated TGS, Video WEBM)\n` +
+          `  - 🎬 Videos & 🎞️ GIF Animations\n` +
+          `  - 📹 Video Notes & 🎙️ Voice Notes\n` +
+          `  - 🎵 Audio & Music Tracks\n` +
+          `  - 📄 Documents & Files (PDF, ZIP, TXT, etc.)\n` +
+          `  - 👤 Contacts, 📍 Locations & 🏢 Venues\n` +
+          `  - ✍️ Written Text\n\n`;
+      }
+
+      return editCq(
+        env,
+        cq,
+        `➕ <b>Create Contest</b>\n\n` +
+        modeInfo +
+        `Send contest details in this format:\n` +
+        `<code>Banner_Image_URL - Name - 1st, 2nd, 3rd, part [- rank_key]</code>\n\n` +
+        `Example:\n` +
+        `<code>https://example.com/banner.jpg - My Contest - 1000, 500, 250, 50 - epic</code>\n\n` +
+        `Send /cancel to abort.`
+      );
+    }
+
+    if (data === 'addc_cancel') {
+      const { kvDel } = await import('./db.js');
+      await kvDel(env, `pending_addcontest:${userId}`);
+      return editCq(env, cq, '✖️ Add contest cancelled.');
+    }
+
     // ─── Submit run picker ───
     if (data.startsWith('subrun_')) {
       const runId = Number(data.slice(7));
@@ -303,7 +365,7 @@ export async function handleCallback(cq, env) {
         });
       }
 
-      const { kvPut } = await import('./db.js');
+      const { kvPut, q } = await import('./db.js');
 
       await kvPut(
         env,
@@ -312,15 +374,43 @@ export async function handleCallback(cq, env) {
         600
       );
 
-      await editCq(
+      const runRes = await q(
         env,
-        cq,
-        `📝 Send your submission now.\n\n` +
-        `• Text: send text\n` +
-        `• Media: send photo/video/document\n\n` +
-        `It will be stored as your entry. Send /cancel to abort.`
+        `SELECT name, mode, submission_type FROM runs WHERE run_id = ?`,
+        [runId]
       );
+      const run = runRes.rows[0];
+      const mode = (run && (run.submission_type || run.mode)) || 'image';
+      const contestName = run ? run.name : 'Contest';
 
+      let instructions = '';
+      if (mode === 'image') {
+        instructions =
+          `📝 <b>Submit to: ${esc(contestName)}</b>\n\n` +
+          `📁 Mode: <b>🖼️ Image Contest</b>\n` +
+          `Please send your <b>photo</b> entry now.\n\n` +
+          `Send /cancel to abort.`;
+      } else if (mode === 'text') {
+        instructions =
+          `📝 <b>Submit to: ${esc(contestName)}</b>\n\n` +
+          `📁 Mode: <b>✍️ Text Contest</b>\n` +
+          `Please type your <b>written answer</b> now.\n\n` +
+          `Send /cancel to abort.`;
+      } else {
+        instructions =
+          `📝 <b>Submit to: ${esc(contestName)}</b>\n\n` +
+          `📁 Mode: <b>🎬 Universal Media Contest</b>\n\n` +
+          `Accepted media types:\n` +
+          `• 🖼️ Photos & 🎭 Stickers (Static, Animated, Video)\n` +
+          `• 🎬 Videos & 🎞️ GIF Animations\n` +
+          `• 📹 Video Notes & 🎙️ Voice Messages\n` +
+          `• 🎵 Audio Tracks & 📄 Documents\n` +
+          `• 👤 Contacts, 📍 Locations & 🏢 Venues\n` +
+          `• ✍️ Written Text\n\n` +
+          `Send your entry now! Send /cancel to abort.`;
+      }
+
+      await editCq(env, cq, instructions);
       return;
     }
 
