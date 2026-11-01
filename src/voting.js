@@ -87,7 +87,7 @@ export async function handleVotingCommand(env, msg, cmd) {
       reply_to_message_id: msg.message_id
     });
 
-    await finishRun(env, run);
+    await finishRun(env, run, { forcePublish: true });
     return;
   }
 
