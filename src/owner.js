@@ -770,87 +770,78 @@ export async function listContests(env, chatId) {
 
 // ─── /delcontest ───
 
-export async function delcontestGroupView(
-  env,
-  chatId,
-  targetChatId,
-  replyTo
-) {
-  const r = await q(
-    env,
-    `SELECT c.* FROM contest_bag b
-     JOIN contests c ON c.id = b.contest_id
-     WHERE b.chat_id = ?
-     ORDER BY c.id DESC`,
+export async function delcontestGroupView(env, chatId, targetChatId, replyTo) {
+  const r = await q(env,
+    `SELECT c.* FROM contest_bag b JOIN contests c ON c.id = b.contest_id
+     WHERE b.chat_id = ? ORDER BY c.id DESC`,
     [String(targetChatId)]
   );
-
-  if (!r.rows.length) {
-    return send(
-      env,
-      chatId,
-      '📭 No contests in this group bag.',
-      { reply_to_message_id: replyTo }
-    );
-  }
-
-  return send(
-    env,
-    chatId,
-    '🗑 <b>Delete Contest</b>\n\nSelect:',
-    {
-      plain: true,
-      reply_to_message_id: replyTo,
-      reply_markup: {
-        inline_keyboard: r.rows.map(c => [{
-          text: `❌ #${c.id} ${esc(c.name).slice(0, 40)}`,
-          callback_data: `delc_${targetChatId}_${c.id}`
-        }])
-      }
-    }
-  );
+  if (!r.rows.length) return send(env, chatId, '📭 No contests in this group bag.', { reply_to_message_id: replyTo });
+  return send(env, chatId, '➖ <b>Remove Contest From This Group</b>\n\nSelect a contest:', {
+    plain: true, reply_to_message_id: replyTo,
+    reply_markup: { inline_keyboard: r.rows.map(c => [{
+      text: '➖ #' + c.id + ' ' + esc(c.name).slice(0, 40),
+      callback_data: 'delc_' + targetChatId + '_' + c.id
+    }]) }
+  });
 }
 
 export async function handleDelContestDM(env, chatId, userId, arg) {
-  const r = await q(
-    env,
-    `SELECT * FROM groups LIMIT 100`
-  );
+  return send(env, chatId, '🗑 <b>Contest Management</b>\n\nChoose an action:', {
+    plain: true,
+    reply_markup: { inline_keyboard: [
+      [{ text: '➖ Remove from one group', callback_data: 'dcm_remove' }],
+      [{ text: '🗑 Permanently delete contest', callback_data: 'dcm_permanent' }]
+    ] }
+  });
+}
 
-  if (!r.rows.length) {
-    return send(env, chatId, '📭 No groups yet.');
-  }
+export async function listGroupsForContestRemoval(env, chatId) {
+  const r = await q(env, 'SELECT * FROM groups ORDER BY title LIMIT 100');
+  if (!r.rows.length) return send(env, chatId, '📭 No groups are registered yet.', { plain: true });
+  return send(env, chatId, '➖ <b>Remove from one group</b>\n\nSelect the group:', {
+    plain: true, reply_markup: { inline_keyboard: r.rows.map(g => [{
+      text: '📢 ' + esc(g.title || g.chat_id), callback_data: 'dcg_' + g.chat_id
+    }]) }
+  });
+}
 
-  return send(
-    env,
-    chatId,
-    '🗑 <b>Select a group:</b>',
-    {
-      plain: true,
-      reply_markup: {
-        inline_keyboard: r.rows.map(g => [{
-          text: `📢 ${esc(g.title)}`,
-          callback_data: `dcg_${g.chat_id}`
-        }])
-      }
-    }
-  );
+export async function listContestsForPermanentDeletion(env, chatId) {
+  const r = await q(env, 'SELECT id, name FROM contests ORDER BY id DESC LIMIT 100');
+  if (!r.rows.length) return send(env, chatId, '📭 There are no contests to delete.', { plain: true });
+  return send(env, chatId, '🗑 <b>Permanently delete a contest</b>\n\nSelect one. You will be asked to confirm:', {
+    plain: true, reply_markup: { inline_keyboard: r.rows.map(c => [{
+      text: '🗑 #' + c.id + ' ' + esc(c.name).slice(0, 40), callback_data: 'dpx_' + c.id
+    }]) }
+  });
 }
 
 export async function delContestFromBag(env, chatId, contestId) {
-  await q(
-    env,
-    `DELETE FROM contest_bag
-     WHERE chat_id = ? AND contest_id = ?`,
-    [String(chatId), contestId]
-  );
+  const exists = await q(env, 'SELECT id FROM contests WHERE id = ? LIMIT 1', [contestId]);
+  if (!exists.rows.length) return false;
+  const result = await q(env, 'DELETE FROM contest_bag WHERE chat_id = ? AND contest_id = ?', [String(chatId), contestId]);
+  return result.rowsAffected > 0;
+}
 
-  return send(
-    env,
-    chatId,
-    `✅ Contest #${contestId} removed from group bag.`,
-    { plain: true }
-  );
+export async function deleteContestPermanently(env, contestId) {
+  const exists = await q(env, 'SELECT id FROM contests WHERE id = ? LIMIT 1', [contestId]);
+  if (!exists.rows.length) return false;
+  const runFilter = 'run_id IN (SELECT run_id FROM runs WHERE contest_id = ?)';
+  const statements = [
+    { sql: 'DELETE FROM votes WHERE sub_id IN (SELECT id FROM submissions WHERE ' + runFilter + ')', args: [contestId] },
+    { sql: 'DELETE FROM sub_history WHERE ' + runFilter, args: [contestId] },
+    { sql: 'DELETE FROM participants WHERE ' + runFilter, args: [contestId] },
+    { sql: 'DELETE FROM submissions WHERE ' + runFilter, args: [contestId] },
+    { sql: 'DELETE FROM run_rewards WHERE ' + runFilter, args: [contestId] },
+    { sql: 'DELETE FROM wins WHERE ' + runFilter, args: [contestId] },
+    { sql: 'DELETE FROM runs WHERE contest_id = ?', args: [contestId] },
+    { sql: 'DELETE FROM contest_bag WHERE contest_id = ?', args: [contestId] },
+    { sql: 'UPDATE group_settings SET last_contest_id = NULL WHERE last_contest_id = ?', args: [contestId] },
+    { sql: 'DELETE FROM contests WHERE id = ?', args: [contestId] }
+  ];
+  const { batch } = await import('./db.js');
+  await batch(env, statements);
+  return true;
 }
 
 // ─── /deldb ───
