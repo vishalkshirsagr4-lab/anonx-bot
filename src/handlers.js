@@ -6,6 +6,7 @@ import { send, editCq, deleteCq, sendCard, welcomeSpec, botProfileSpec, revealSp
 import { getHelp, helpMainView } from './help.js';
 import { handleSettingsCb, settingsView } from './settings.js';
 import { handleJoin, handleSubmitCmd, groupContestStatus, dmContestStatus, forceContest } from './contest.js';
+import { handleVotingCommand } from './voting.js';
 import { sendWallet, handleClaim, showLeaderboard } from './users.js';
 import { sendAnonMessage } from './anon.js';
 import {
@@ -87,6 +88,7 @@ async function handleGroupMessage(msg, env) {
     return send(env, chatId, v.text, { reply_markup: v.markup });
   }
   if (cmd.name === 'contest') return groupContestStatus(env, chatId, msg.message_id);
+  if (['voting', 'voteresult', 'votestart', 'voteend'].includes(cmd.name)) return handleVotingCommand(env, msg, cmd);
   if (cmd.name === 'claim') return handleClaim(env, chatId, msg.from, msg.message_id);
   if (cmd.name === 'wallet') return sendWallet(env, chatId, msg.from, msg.message_id);
   if (cmd.name === 'leaderboard') return showLeaderboard(env, chatId, msg.from, 'coins', 'group', msg.message_id);
@@ -506,6 +508,8 @@ export async function setupCommands(env) {
     { command: 'start', description: 'Bot info' },
     { command: 'ask', description: 'Anonymous question (opens DM)' },
     { command: 'contest', description: 'Contest status' },
+    { command: 'voting', description: 'Live voting status' },
+    { command: 'voteresult', description: 'Contest standings/results' },
     { command: 'claim', description: 'Daily coins' },
     { command: 'wallet', description: 'Coin balance' },
     { command: 'leaderboard', description: 'Top 10 group' },
@@ -514,6 +518,8 @@ export async function setupCommands(env) {
 
   const groupAdmins = [
     ...group,
+    { command: 'votestart', description: 'Admin: start voting now' },
+    { command: 'voteend', description: 'Admin: end voting and publish results' },
     { command: 'setting', description: 'Contest settings' },
   ];
 
