@@ -423,7 +423,8 @@ export async function initDB(env) {
       ['contests', 'submission_type', "TEXT DEFAULT 'image'"],
       ['contests', 'submit_hours', 'INTEGER DEFAULT 20'],
       ['runs', 'submission_type', "TEXT DEFAULT 'image'"],
-      ['runs', 'submit_hours', 'INTEGER DEFAULT 20']
+      ['runs', 'submit_hours', 'INTEGER DEFAULT 20'],
+      ['votes', 'run_id', 'INTEGER']
     ];
 
     for (const [table, column, type] of migrations) {
@@ -443,6 +444,29 @@ export async function initDB(env) {
         );
       }
     }
+
+    // Enforce one vote per member per contest, including votes from older versions.
+    await q(env,
+      `UPDATE votes
+       SET run_id = (SELECT run_id FROM submissions WHERE submissions.id = votes.sub_id)
+       WHERE run_id IS NULL`);
+
+    // Preserve the earliest vote if older versions recorded multiple votes in one contest.
+    await q(env,
+      `DELETE FROM votes
+       WHERE rowid NOT IN (
+         SELECT MIN(rowid) FROM votes
+         WHERE run_id IS NOT NULL
+         GROUP BY run_id, voter_id
+       ) AND run_id IS NOT NULL`);
+
+    await q(env,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_votes_one_per_run
+       ON votes(run_id, voter_id)`);
+
+    await q(env,
+      `UPDATE submissions
+       SET votes = (SELECT COUNT(*) FROM votes WHERE votes.sub_id = submissions.id)`);
 
     DB_INITIALIZED = true;
   })().catch(error => {
