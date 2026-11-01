@@ -84,7 +84,7 @@ export async function handleVotingCommand(env, msg, cmd) {
     }
 
     await send(env, chatId,
-      `🗳 <b>Vote for one participant</b>\\n\\n🏆 <b>${esc(run.name)}</b> · #${run.run_id}\\nEach member can vote only once. Your own entry cannot be selected.\\n⌛ Voting closes: <b>${fmtTime(run.vote_end_ts)}</b>`,
+      `🗳 <b>Vote for one participant</b>\n\n🏆 <b>${esc(run.name)}</b> · #${run.run_id}\nEach member can vote only once. Your own entry cannot be selected.\n⌛ Voting closes: <b>${fmtTime(run.vote_end_ts)}</b>`,
       { reply_to_message_id: msg.message_id });
 
     let number = 1;
