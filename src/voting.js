@@ -70,10 +70,15 @@ export async function handleVotingCommand(env, msg, cmd) {
       reply_to_message_id: msg.message_id
     });
 
+    const entryCount = await q(env, `SELECT COUNT(*) AS total FROM submissions WHERE run_id = ?`, [run.run_id]);
+    if (!Number(entryCount.rows[0]?.total || 0)) {
+      return send(env, chatId, 'ℹ️ There are no submissions yet. Voting cannot start until at least one entry is submitted.', {
+        reply_to_message_id: msg.message_id
+      });
+    }
+
     await advanceToVoting(env, run);
-    return send(env, chatId,
-      `✅ Voting has been started manually for <b>${esc(run.name)}</b> (Contest #${run.run_id}).`,
-      { reply_to_message_id: msg.message_id });
+    return;
   }
 
   if (cmd.name === 'voteend') {
@@ -96,7 +101,9 @@ export async function handleVotingCommand(env, msg, cmd) {
     });
 
     const rows = await standings(env, run);
-    const totalVotes = rows.reduce((sum, row) => sum + Number(row.votes || 0), 0);
+    const totals = await q(env, `SELECT COUNT(*) AS entries, COALESCE(SUM(votes), 0) AS votes FROM submissions WHERE run_id = ?`, [run.run_id]);
+    const entryTotal = Number(totals.rows[0]?.entries || 0);
+    const totalVotes = Number(totals.rows[0]?.votes || 0);
     const medals = ['🥇', '🥈', '🥉'];
     const lines = rows.length
       ? rows.slice(0, 10).map((row, index) => {
@@ -115,7 +122,7 @@ export async function handleVotingCommand(env, msg, cmd) {
       `📊 <b>${cmd.name === 'voting' ? 'Voting Status' : 'Contest Results'}</b>\n\n` +
       `🏆 <b>${esc(run.name)}</b> · #${run.run_id}\n` +
       `${phase}\n\n` +
-      `👥 Entries: <b>${rows.length}</b>\n` +
+      `👥 Entries: <b>${entryTotal}</b>\n` +
       `🗳 Total votes: <b>${totalVotes}</b>\n\n` +
       `<b>Current ranking</b>\n${lines}` +
       (run.status === 'voting' ? '\n\n<i>Ranking updates when this command is run again.</i>' : ''),
