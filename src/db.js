@@ -1,49 +1,8 @@
 
-// src/db.js
-import { DatabaseSync } from 'node:sqlite';
 import { state, CFG } from './config.js';
 
 let DB_INITIALIZED = false;
 let DB_INIT_PROMISE = null;
-
-let localDb = null;
-function getLocalDb() {
-  if (!localDb) {
-    localDb = new DatabaseSync(':memory:');
-    localDb.exec('PRAGMA foreign_keys = ON;');
-  }
-  return localDb;
-}
-
-function runLocalStmt(sqlite, s) {
-  const sql = (s.sql || '').trim();
-  const args = s.args || [];
-  const formattedArgs = args.map(a => (typeof a === 'boolean' ? (a ? 1 : 0) : a));
-
-  if (/^\s*(CREATE|ALTER|DROP)\b/i.test(sql)) {
-    sqlite.exec(sql);
-    return { rows: [], rowsAffected: 0, lastId: null };
-  }
-
-  const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(sql);
-  if (isSelect) {
-    const stmt = sqlite.prepare(sql);
-    const rows = stmt.all(...formattedArgs);
-    return {
-      rows: rows.map(r => ({ ...r })),
-      rowsAffected: 0,
-      lastId: null
-    };
-  } else {
-    const stmt = sqlite.prepare(sql);
-    const res = stmt.run(...formattedArgs);
-    return {
-      rows: [],
-      rowsAffected: res.changes,
-      lastId: res.lastInsertRowid == null ? null : Number(res.lastInsertRowid)
-    };
-  }
-}
 
 // ─── Turso configuration ───
 function getConfig(env) {
@@ -76,7 +35,7 @@ function getConfig(env) {
 }
 
 // ─── SQL argument formatting ───
-function fmtArgs(args) {
+function fmtArgs(args = []) {
   return args.map(a => {
     if (a === null || a === undefined) {
       return { type: 'null' };
@@ -151,71 +110,62 @@ function parseResult(r) {
 
   return {
     rows,
-    rowsAffected: er.affected_row_count,
+    rowsAffected: er.affected_row_count ?? 0,
     lastId: er.last_insert_rowid == null
       ? null
       : Number(er.last_insert_rowid)
   };
 }
 
-// ─── Turso HTTP pipeline (with in-memory SQLite fallback) ───
+// ─── Turso HTTP pipeline ───
 async function pipeline(env, stmts) {
-  let cfg = null;
-  try {
-    cfg = getConfig(env);
-  } catch {
-    // Turso config missing, use local in-memory SQLite
+  if (!Array.isArray(stmts) || stmts.length === 0) {
+    return [];
   }
 
-  if (cfg) {
-    try {
-      const { url, token } = cfg;
+  // Turso is required. Do not silently use an empty local database.
+  const { url, token } = getConfig(env);
 
-      const requests = stmts.map(s => ({
-        type: 'execute',
-        stmt: {
-          sql: s.sql,
-          args: fmtArgs(s.args || [])
-        }
-      }));
-
-      requests.push({ type: 'close' });
-
-      const res = await fetch(`${url}/v2/pipeline`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ requests })
-      });
-
-      if (!res.ok) {
-        throw new Error(
-          `Turso HTTP ${res.status}: ${await res.text()}`
-        );
-      }
-
-      const data = await res.json();
-
-      if (!Array.isArray(data.results)) {
-        throw new Error('Invalid Turso pipeline response.');
-      }
-
-      if (data.results.length < stmts.length) {
-        throw new Error('Incomplete response from Turso.');
-      }
-
-      return data.results
-        .slice(0, stmts.length)
-        .map(parseResult);
-    } catch (err) {
-      console.warn('[AI Studio] Turso DB unavailable, using local SQLite:', err.message);
+  const requests = stmts.map(s => ({
+    type: 'execute',
+    stmt: {
+      sql: s.sql,
+      args: fmtArgs(s.args || [])
     }
+  }));
+
+  requests.push({ type: 'close' });
+
+  const res = await fetch(`${url}/v2/pipeline`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ requests })
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+
+    throw new Error(
+      `Turso HTTP ${res.status}: ${errorText}`
+    );
   }
 
-  const sqlite = getLocalDb();
-  return stmts.map(s => runLocalStmt(sqlite, s));
+  const data = await res.json();
+
+  if (!Array.isArray(data.results)) {
+    throw new Error('Invalid Turso pipeline response.');
+  }
+
+  if (data.results.length < stmts.length) {
+    throw new Error('Incomplete response from Turso.');
+  }
+
+  return data.results
+    .slice(0, stmts.length)
+    .map(parseResult);
 }
 
 // ─── Public query functions ───
@@ -413,7 +363,6 @@ const SCHEMA = [
     ts INTEGER
   )`,
 
-  // ─── Reward idempotency table ───
   `CREATE TABLE IF NOT EXISTS run_rewards (
     run_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
@@ -425,7 +374,6 @@ const SCHEMA = [
     PRIMARY KEY (run_id, user_id, reward_type)
   )`,
 
-  // ─── Automatic reward crediting trigger ───
   `CREATE TRIGGER IF NOT EXISTS trg_run_rewards_credit
    AFTER INSERT ON run_rewards
    BEGIN
@@ -532,7 +480,16 @@ export async function kvGet(env, key, asJson = false) {
     return null;
   }
 
-  if (asJson || (typeof row.value === 'string' && (row.value.startsWith('{') || row.value.startsWith('[')))) {
+  if (
+    asJson ||
+    (
+      typeof row.value === 'string' &&
+      (
+        row.value.startsWith('{') ||
+        row.value.startsWith('[')
+      )
+    )
+  ) {
     try {
       return JSON.parse(row.value);
     } catch {
