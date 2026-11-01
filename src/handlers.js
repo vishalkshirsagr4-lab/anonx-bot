@@ -88,7 +88,7 @@ async function handleGroupMessage(msg, env) {
     return send(env, chatId, v.text, { reply_markup: v.markup });
   }
   if (cmd.name === 'contest') return groupContestStatus(env, chatId, msg.message_id);
-  if (['voting', 'voteresult', 'votestart', 'voteend'].includes(cmd.name)) return handleVotingCommand(env, msg, cmd);
+  if (['vote', 'voting', 'voteresult', 'votestart', 'voteend'].includes(cmd.name)) return handleVotingCommand(env, msg, cmd);
   if (cmd.name === 'claim') return handleClaim(env, chatId, msg.from, msg.message_id);
   if (cmd.name === 'wallet') return sendWallet(env, chatId, msg.from, msg.message_id);
   if (cmd.name === 'leaderboard') return showLeaderboard(env, chatId, msg.from, 'coins', 'group', msg.message_id);
@@ -508,6 +508,7 @@ export async function setupCommands(env) {
     { command: 'start', description: 'Bot info' },
     { command: 'ask', description: 'Anonymous question (opens DM)' },
     { command: 'contest', description: 'Contest status' },
+    { command: 'vote', description: 'View entries and cast one vote' },
     { command: 'voting', description: 'Live voting status' },
     { command: 'voteresult', description: 'Contest standings/results' },
     { command: 'claim', description: 'Daily coins' },
