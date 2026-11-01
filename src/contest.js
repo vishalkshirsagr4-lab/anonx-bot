@@ -474,120 +474,64 @@ export async function advanceToVoting(env, run) {
 }
 
 // ─── Finish contest with idempotent rewards ───
-export async function finishRun(env, run) {
+export async function finishRun(env, run, options = {}) {
   if (run.status === 'done') return;
 
   const subs = (
-    await q(
-      env,
-      `SELECT * FROM submissions
-       WHERE run_id = ?
-       ORDER BY votes DESC, first_ts ASC`,
-      [run.run_id]
-    )
+    await q(env, `SELECT * FROM submissions WHERE run_id = ? ORDER BY votes DESC, first_ts ASC`, [run.run_id])
   ).rows;
 
   const minJoin = run.min_join || CFG.MIN_JOIN_DEFAULT;
+  const eligibleForRewards = subs.length >= minJoin;
 
-  if (subs.length < minJoin) {
-    const update = await q(
-      env,
-      `UPDATE runs
-       SET status = 'done'
-       WHERE run_id = ? AND status = 'voting'`,
-      [run.run_id]
-    );
-
+  // Normal automatic closure preserves the minimum-entry rule. An admin-forced
+  // closure still publishes the ranking, but does not award prizes below the minimum.
+  if (!eligibleForRewards && !options.forcePublish) {
+    const update = await q(env, `UPDATE runs SET status = 'done' WHERE run_id = ? AND status = 'voting'`, [run.run_id]);
     if (update.rowsAffected > 0) {
-      await send(
-        env,
-        run.chat_id,
-        `⚠️ <b>Contest Cancelled</b>\n\n` +
-        `<b>${esc(run.name)}</b>\n` +
-        `Only ${subs.length}/${minJoin} submissions. Not enough to award prizes.`,
-        { plain: true }
-      );
+      await send(env, run.chat_id,
+        `⚠️ <b>Contest Cancelled</b>\n\n<b>${esc(run.name)}</b>\nOnly ${subs.length}/${minJoin} submissions. Not enough to award prizes.`,
+        { plain: true });
     }
-
     return;
   }
 
   const prizes = [run.p1, run.p2, run.p3];
   const winners = [];
-
-  // Winner rewards: the database trigger credits coins and records wins.
   for (let i = 0; i < Math.min(3, subs.length); i++) {
     const sub = subs[i];
-    const prize = Number(prizes[i]) || 0;
-
-    await q(
-      env,
-      `INSERT OR IGNORE INTO run_rewards
-       (run_id, user_id, reward_type, amount, chat_id, place, created_at)
-       VALUES (?, ?, 'winner', ?, ?, ?, ?)`,
-      [
-        run.run_id,
-        sub.user_id,
-        prize,
-        run.chat_id,
-        i + 1,
-        Date.now()
-      ]
-    );
-
-    winners.push({
-      user_id: sub.user_id,
-      place: i + 1,
-      prize,
-      votes: sub.votes
-    });
+    const prize = eligibleForRewards ? (Number(prizes[i]) || 0) : 0;
+    if (eligibleForRewards) {
+      await q(env,
+        `INSERT OR IGNORE INTO run_rewards (run_id, user_id, reward_type, amount, chat_id, place, created_at) VALUES (?, ?, 'winner', ?, ?, ?, ?)`,
+        [run.run_id, sub.user_id, prize, run.chat_id, i + 1, Date.now()]);
+    }
+    winners.push({ user_id: sub.user_id, place: i + 1, prize, votes: Number(sub.votes || 0) });
   }
 
-  // Participation rewards.
-  if (Number(run.ps) > 0) {
+  if (eligibleForRewards && Number(run.ps) > 0) {
     for (const sub of subs) {
-      await q(
-        env,
-        `INSERT OR IGNORE INTO run_rewards
-         (run_id, user_id, reward_type, amount, chat_id, place, created_at)
-         VALUES (?, ?, 'participant', ?, ?, NULL, ?)`,
-        [
-          run.run_id,
-          sub.user_id,
-          Number(run.ps),
-          run.chat_id,
-          Date.now()
-        ]
-      );
+      await q(env,
+        `INSERT OR IGNORE INTO run_rewards (run_id, user_id, reward_type, amount, chat_id, place, created_at) VALUES (?, ?, 'participant', ?, ?, NULL, ?)`,
+        [run.run_id, sub.user_id, Number(run.ps), run.chat_id, Date.now()]);
     }
   }
 
   const medals = ['🥇', '🥈', '🥉'];
-
   const winLines = winners.map((w, i) =>
-    `${medals[i]} ${w.votes} votes — +${w.prize} 🪙`
+    medals[i] + ' ' + w.votes + ' votes' + (eligibleForRewards ? ' — +' + w.prize + ' 🪙' : '')
   ).join('\n');
 
-  // Mark finished only after reward processing succeeds.
-  const update = await q(
-    env,
-    `UPDATE runs
-     SET status = 'done'
-     WHERE run_id = ? AND status = 'voting'`,
-    [run.run_id]
-  );
-
+  const update = await q(env, `UPDATE runs SET status = 'done' WHERE run_id = ? AND status = 'voting'`, [run.run_id]);
   if (update.rowsAffected > 0) {
-    await send(
-      env,
-      run.chat_id,
-      `🏆 <b>Contest Finished!</b>\n\n` +
-      `<b>${esc(run.name)}</b>\n\n` +
-      `${winLines}\n\n` +
-      `🎁 All submitters get +${run.ps} 🪙\n\n` +
-      `<i>Winners have been credited.</i>`,
-      { plain: true }
-    );
+    const heading = eligibleForRewards ? '🏆 <b>Contest Finished!</b>' : '📊 <b>Voting Closed — Results Published</b>';
+    const rewardNote = eligibleForRewards
+      ? '🎁 Participation rewards have been credited.\n\n<i>Winners have been credited.</i>'
+      : 'ℹ️ The minimum of ' + minJoin + ' entries was not reached, so no coin prizes were awarded.';
+    await send(env, run.chat_id,
+      heading + '\n\n<b>' + esc(run.name) + '</b>\n\n' +
+      (winLines || 'No entries were submitted.') + '\n\n' + rewardNote,
+      { plain: true });
   }
 }
 
