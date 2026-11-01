@@ -12,7 +12,8 @@ import {
   handleDeldbBackspace,
   handleDeldbConfirm,
   handleDeldbCancel,
-  delContestFromBag
+  delContestFromBag,
+  deleteContestPermanently
 } from './owner.js';
 import { getBotInfo, esc } from './helpers.js';
 
@@ -414,99 +415,89 @@ export async function handleCallback(cq, env) {
       return;
     }
 
-    // ─── Delete contest from group ───
-    if (data.startsWith('delc_')) {
-      if (!isOwner(userId)) {
-        return tg(env, 'answerCallbackQuery', {
-          callback_query_id: cq.id,
-          text: '⛔ Owner only.',
-          show_alert: true
+    // ─── Contest deletion menu ───
+    if (data === 'dcm_remove' || data === 'dcm_permanent') {
+      if (!isOwner(userId)) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '⛔ Owner only.', show_alert: true });
+      await tg(env, 'answerCallbackQuery', { callback_query_id: cq.id });
+      if (data === 'dcm_remove') {
+        const r = await q(env, 'SELECT * FROM groups ORDER BY title LIMIT 100');
+        if (!r.rows.length) return editCq(env, cq, '📭 No groups are registered yet.');
+        return editCq(env, cq, '➖ <b>Remove from one group</b>\n\nSelect the group:', {
+          inline_keyboard: r.rows.map(g => [{ text: '📢 ' + esc(g.title || g.chat_id), callback_data: 'dcg_' + g.chat_id }])
         });
       }
-
-      const rest = data.slice(5);
-      const idx = rest.lastIndexOf('_');
-
-      if (idx <= 0) {
-        return tg(env, 'answerCallbackQuery', {
-          callback_query_id: cq.id,
-          text: '❌ Invalid request.',
-          show_alert: true
-        });
-      }
-
-      const groupChat = rest.slice(0, idx);
-      const contestId = Number(rest.slice(idx + 1));
-
-      if (
-        !/^-?\d+$/.test(groupChat) ||
-        !Number.isSafeInteger(contestId) ||
-        contestId <= 0
-      ) {
-        return tg(env, 'answerCallbackQuery', {
-          callback_query_id: cq.id,
-          text: '❌ Invalid request.',
-          show_alert: true
-        });
-      }
-
-      await delContestFromBag(env, groupChat, contestId);
-
-      return tg(env, 'answerCallbackQuery', {
-        callback_query_id: cq.id,
-        text: '✅ Deleted.',
-        show_alert: false
+      const r = await q(env, 'SELECT id, name FROM contests ORDER BY id DESC LIMIT 100');
+      if (!r.rows.length) return editCq(env, cq, '📭 There are no contests to delete.');
+      return editCq(env, cq, '🗑 <b>Permanently delete a contest</b>\n\nSelect one. You will be asked to confirm:', {
+        inline_keyboard: r.rows.map(c => [{ text: '🗑 #' + c.id + ' ' + esc(c.name).slice(0, 40), callback_data: 'dpx_' + c.id }])
       });
     }
 
-    // ─── Delete contest group picker ───
+    // ─── Remove contest from one group's rotation ───
+    if (data.startsWith('delc_')) {
+      if (!isOwner(userId)) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '⛔ Owner only.', show_alert: true });
+      const rest = data.slice(5);
+      const idx = rest.lastIndexOf('_');
+      if (idx <= 0) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '❌ Invalid request.', show_alert: true });
+      const groupChat = rest.slice(0, idx);
+      const contestId = Number(rest.slice(idx + 1));
+      if (!/^-?\d+$/.test(groupChat) || !Number.isSafeInteger(contestId) || contestId <= 0) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '❌ Invalid request.', show_alert: true });
+      const removed = await delContestFromBag(env, groupChat, contestId);
+      await tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: removed ? '✅ Removed from this group.' : 'ℹ️ Contest was not in this group.', show_alert: false });
+      const r = await q(env, 'SELECT c.* FROM contest_bag b JOIN contests c ON c.id = b.contest_id WHERE b.chat_id = ? ORDER BY c.id DESC', [groupChat]);
+      if (!r.rows.length) return editCq(env, cq, '📭 This group has no contests left in its bag.');
+      return editCq(env, cq, '➖ <b>Remove another contest from this group:</b>', {
+        inline_keyboard: r.rows.map(c => [{ text: '➖ #' + c.id + ' ' + esc(c.name).slice(0, 40), callback_data: 'delc_' + groupChat + '_' + c.id }])
+      });
+    }
+
+    // ─── Choose contest for permanent deletion ───
+    if (data.startsWith('dpx_')) {
+      if (!isOwner(userId)) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '⛔ Owner only.', show_alert: true });
+      const contestId = Number(data.slice(4));
+      if (!Number.isSafeInteger(contestId) || contestId <= 0) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '❌ Invalid contest ID.', show_alert: true });
+      const r = await q(env, 'SELECT id, name FROM contests WHERE id = ? LIMIT 1', [contestId]);
+      if (!r.rows.length) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'Contest no longer exists.', show_alert: true });
+      await tg(env, 'answerCallbackQuery', { callback_query_id: cq.id });
+      return editCq(env, cq, '⚠️ <b>Confirm permanent deletion</b>\n\nContest: <b>#' + r.rows[0].id + ' — ' + esc(r.rows[0].name) + '</b>\n\nThis removes it from every group and permanently deletes its runs, submissions, votes and rewards. This cannot be undone.', {
+        inline_keyboard: [
+          [{ text: '🗑 Yes, permanently delete', callback_data: 'dpy_' + contestId }],
+          [{ text: '✖️ Cancel', callback_data: 'dpn' }]
+        ]
+      });
+    }
+
+    // ─── Confirm permanent deletion ───
+    if (data.startsWith('dpy_')) {
+      if (!isOwner(userId)) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '⛔ Owner only.', show_alert: true });
+      const contestId = Number(data.slice(4));
+      if (!Number.isSafeInteger(contestId) || contestId <= 0) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '❌ Invalid contest ID.', show_alert: true });
+      const deleted = await deleteContestPermanently(env, contestId);
+      await tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: deleted ? '✅ Contest permanently deleted.' : 'ℹ️ Contest no longer exists.', show_alert: false });
+      return editCq(env, cq, deleted ? '🗑 Contest #' + contestId + ' and its associated data were permanently deleted.' : 'ℹ️ This contest was already deleted.');
+    }
+
+    // ─── Cancel permanent deletion ───
+    if (data === 'dpn') {
+      if (!isOwner(userId)) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '⛔ Owner only.', show_alert: true });
+      await tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'Cancelled.' });
+      return editCq(env, cq, '✖️ Permanent deletion cancelled.');
+    }
+
+    // ─── Select group for group-only removal ───
     if (data.startsWith('dcg_')) {
-      if (!isOwner(userId)) {
-        return tg(env, 'answerCallbackQuery', {
-          callback_query_id: cq.id,
-          text: '⛔ Owner only.',
-          show_alert: true
-        });
-      }
-
+      if (!isOwner(userId)) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '⛔ Owner only.', show_alert: true });
       const targetChat = data.slice(4);
-
-      if (!/^-?\d+$/.test(targetChat)) {
-        return tg(env, 'answerCallbackQuery', {
-          callback_query_id: cq.id,
-          text: '❌ Invalid group.',
-          show_alert: true
-        });
-      }
-
-      const r = await q(
-        env,
-        `SELECT c.* FROM contest_bag b
-         JOIN contests c ON c.id = b.contest_id
-         WHERE b.chat_id = ?
-         ORDER BY c.id DESC`,
-        [targetChat]
-      );
-
+      if (!/^-?\d+$/.test(targetChat)) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '❌ Invalid group.', show_alert: true });
+      const r = await q(env, 'SELECT c.* FROM contest_bag b JOIN contests c ON c.id = b.contest_id WHERE b.chat_id = ? ORDER BY c.id DESC', [targetChat]);
       if (!r.rows.length) {
-        return tg(env, 'answerCallbackQuery', {
-          callback_query_id: cq.id,
-          text: '📭 No contests in that group.',
-          show_alert: true
-        });
+        await tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: '📭 No contests in that group.', show_alert: true });
+        return editCq(env, cq, '📭 This group has no contests in its bag.');
       }
-
-      return editCq(
-        env,
-        cq,
-        `🗑 <b>Select a contest to remove:</b>`,
-        {
-          inline_keyboard: r.rows.map(c => [{
-            text: `❌ #${c.id} ${esc(c.name).slice(0, 40)}`,
-            callback_data: `delc_${targetChat}_${c.id}`
-          }])
-        }
-      );
+      await tg(env, 'answerCallbackQuery', { callback_query_id: cq.id });
+      return editCq(env, cq, '➖ <b>Select a contest to remove from this group:</b>', {
+        inline_keyboard: r.rows.map(c => [{ text: '➖ #' + c.id + ' ' + esc(c.name).slice(0, 40), callback_data: 'delc_' + targetChat + '_' + c.id }])
+      });
     }
 
     // ─── Database wipe ───
