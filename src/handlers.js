@@ -560,12 +560,9 @@ export async function setupCommands(env) {
     },
     {
       name: 'owner commands',
+      owners: true,
       body: {
         commands: owner,
-        scope: {
-          type: 'chat',
-          chat_id: state.OWNER_ID,
-        },
       },
     },
   ];
