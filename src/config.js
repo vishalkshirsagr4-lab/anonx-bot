@@ -13,6 +13,7 @@ export const state = {
   IMAGE_API_KEY: '',
 
   OWNER_ID: 8750122483,
+  OWNER_IDS: [8750122483],
   SUPPORT_GROUP: 'https://t.me/+lOxdvQHVCSdhZWU9',
   BOT_NAME: 'AnonX',
 
@@ -185,6 +186,15 @@ export function applyEnv(env) {
 
   state.OWNER_ID = pick(env, 'OWNER_ID', state.OWNER_ID, 'num');
 
+  const ownerIdsRaw = pick(env, 'OWNER_IDS', '', 'str');
+  const parsedOwnerIds = String(ownerIdsRaw || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(value => /^\\d+$/.test(value))
+    .map(Number)
+    .filter(value => Number.isSafeInteger(value) && value > 0);
+  state.OWNER_IDS = [...new Set([Number(state.OWNER_ID), ...parsedOwnerIds])];
+
   state.SUPPORT_GROUP = pick(env, 'SUPPORT_GROUP', state.SUPPORT_GROUP);
   state.BOT_NAME = pick(env, 'BOT_NAME', state.BOT_NAME);
 
@@ -226,7 +236,9 @@ export const rankLabel = key => {
   return rank ? `${rank.emoji} ${rank.name}` : 'Unknown Rank';
 };
 
-export const isOwner = id =>
-  Number.isSafeInteger(Number(id)) &&
-  Number(id) > 0 &&
-  Number(id) === Number(state.OWNER_ID);
+export const isOwner = id => {
+  const userId = Number(id);
+  return Number.isSafeInteger(userId) &&
+    userId > 0 &&
+    state.OWNER_IDS.includes(userId);
+};
