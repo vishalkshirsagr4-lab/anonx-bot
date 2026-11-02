@@ -74,16 +74,28 @@ export async function handleGameCommand(env, msg, cmd) {
   }
   if (name === 'quiz' || name === 'riddle' || name === 'emoji') return startChoiceGame(env, chatId, from, name);
   if (name === 'rps') {
+    const target = msg.reply_to_message?.from;
+    if (!target || target.is_bot || target.id === from.id) {
+      return send(env, chatId,
+        '✊ <b>Member vs Member RPS</b>\n\nReply to another member’s message with /rps to challenge them. Both players must choose a hand.');
+    }
     const id = Date.now().toString(36);
-    const session = { id, type: 'rps', userId: from.id, name: from.first_name || 'Player', expires: Date.now() + 60000 };
-    await kvPut(env, 'game:rps:' + chatId + ':' + id, session, 60);
-    return send(env, chatId, '✊ <b>Rock, Paper, Scissors</b>\nChoose your move:', {
-      reply_markup: { inline_keyboard: [[
-        { text: '✊ Rock', callback_data: 'grps_' + id + '_0' },
-        { text: '✋ Paper', callback_data: 'grps_' + id + '_1' },
-        { text: '✌️ Scissors', callback_data: 'grps_' + id + '_2' }
-      ]] }
-    });
+    const session = {
+      id, type: 'rps', status: 'pending',
+      p1: from.id, p1Name: from.first_name || 'Player',
+      p2: target.id, p2Name: target.first_name || 'Player',
+      choices: {}, expires: Date.now() + 120000
+    };
+    const rpsKey = 'game:rps:' + chatId + ':' + id;
+    await kvPut(env, rpsKey, session, 120);
+    return send(env, chatId,
+      '✊ <b>Rock, Paper, Scissors — Player Challenge</b>\n\n' +
+      '<b>' + esc(session.p1Name) + '</b> challenged <b>' + esc(session.p2Name) + '</b>.\n' +
+      'Only the challenged member can accept.',
+      { reply_markup: { inline_keyboard: [[
+        { text: '⚔️ Accept challenge', callback_data: 'grps_join_' + id }
+      ]] } }
+    );
   }
   if (name === 'word') {
     const words = ['planet','garden','puzzle','silver','window','rocket','orange','castle'];
@@ -161,20 +173,71 @@ export async function handleGameCallback(env, cq, data) {
     await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' + esc(session.question));
     return { toast: 'Correct! +15 coins' };
   }
+  if (data.startsWith('grps_join_')) {
+    const id = data.slice('grps_join_'.length);
+    const rpsKey = 'game:rps:' + chatId + ':' + id;
+    const session = await kvGet(env, rpsKey, true);
+    if (!session || session.expires <= Date.now() || session.status !== 'pending') {
+      return { toast: 'This challenge expired.', alert: true };
+    }
+    if (userId !== session.p2) return { toast: 'Only the challenged member can accept.', alert: true };
+    const updated = { ...session, status: 'playing' };
+    if (!(await claimSession(env, rpsKey, session, updated))) {
+      return { toast: 'Please tap Accept again.', alert: false };
+    }
+    await editCq(env, cq,
+      '✊ <b>Rock, Paper, Scissors</b>\n\n' +
+      '<b>' + esc(session.p1Name) + '</b> vs <b>' + esc(session.p2Name) + '</b>\n' +
+      'Both players: choose your hand. Your choice stays hidden until both have picked.',
+      { inline_keyboard: [[
+        { text: '✊ Rock', callback_data: 'grps_' + id + '_0' },
+        { text: '✋ Paper', callback_data: 'grps_' + id + '_1' },
+        { text: '✌️ Scissors', callback_data: 'grps_' + id + '_2' }
+      ]] }
+    );
+    return { toast: 'Challenge accepted! Choose your hand.' };
+  }
   if ((match = data.match(/^grps_([a-z0-9]+)_([0-2])$/))) {
-    const session = await kvGet(env, 'game:rps:' + chatId + ':' + match[1], true);
-    if (!session || session.expires <= Date.now()) return { toast: 'This round expired.', alert: true };
-    if (session.userId !== userId) return { toast: 'This is ' + session.name + "'s round.", alert: true };
     const rpsKey = 'game:rps:' + chatId + ':' + match[1];
-    if (!(await claimSession(env, rpsKey, session, { ...session, done: true }))) return { toast: 'This round was already played.', alert: true };
+    const session = await kvGet(env, rpsKey, true);
+    if (!session || session.expires <= Date.now() || session.status !== 'playing') {
+      return { toast: 'This round is not active.', alert: true };
+    }
+    if (userId !== session.p1 && userId !== session.p2) {
+      return { toast: 'You are not one of the two players.', alert: true };
+    }
+    if (session.choices?.[String(userId)] !== undefined) {
+      return { toast: 'You have already chosen your hand.', alert: true };
+    }
+    const choice = Number(match[2]);
+    const updated = {
+      ...session,
+      choices: { ...(session.choices || {}), [String(userId)]: choice }
+    };
+    const bothChosen = updated.choices[String(session.p1)] !== undefined &&
+      updated.choices[String(session.p2)] !== undefined;
+    if (bothChosen) updated.status = 'done';
+    if (!(await claimSession(env, rpsKey, session, updated))) {
+      return { toast: 'Choice not saved. Please tap once more.', alert: false };
+    }
+    if (!bothChosen) {
+      return { toast: 'Your hand is locked in. Waiting for the other player.' };
+    }
+    const p1 = updated.choices[String(session.p1)];
+    const p2 = updated.choices[String(session.p2)];
+    const labels = ['Rock', 'Paper', 'Scissors'];
+    const winner = p1 === p2 ? 0 : ((p1 - p2 + 3) % 3 === 1 ? session.p1 : session.p2);
+    if (winner) await addCoins(env, winner, 10);
+    const result = winner === 0
+      ? '🤝 It is a draw! No coins awarded.'
+      : '🏆 <b>' + esc(winner === session.p1 ? session.p1Name : session.p2Name) + '</b> wins and earns 10 🪙!';
+    await editCq(env, cq,
+      '✊ <b>Rock, Paper, Scissors — Result</b>\n\n' +
+      '<b>' + esc(session.p1Name) + '</b>: ' + labels[p1] + '\n' +
+      '<b>' + esc(session.p2Name) + '</b>: ' + labels[p2] + '\n\n' + result
+    );
     await kvDel(env, rpsKey);
-    const choices = ['Rock','Paper','Scissors'];
-    const player = Number(match[2]), bot = Math.floor(Math.random()*3);
-    const win = (player - bot + 3) % 3 === 1;
-    if (win) await addCoins(env, userId, 10);
-    const result = player === bot ? 'It is a draw.' : win ? 'You win! +10 🪙' : 'AnonX wins this round.';
-    await editCq(env, cq, '✊ <b>Rock, Paper, Scissors</b>\nYou: ' + choices[player] + '\nAnonX: ' + choices[bot] + '\n\n' + result);
-    return { toast: result };
+    return { toast: winner ? 'Round complete! Winner gets 10 coins.' : 'Round ended in a draw.' };
   }
   if ((match = data.match(/^gh_([a-z0-9]+)_([0-8])$/))) {
     const session = await kvGet(env, 'game:hunt:' + chatId + ':' + match[1], true);
