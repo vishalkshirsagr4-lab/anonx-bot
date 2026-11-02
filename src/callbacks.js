@@ -23,7 +23,30 @@ export async function handleCallback(cq, env) {
   const userId = cq.from.id;
 
   try {
-    if (/^(gq_|gr_|ge_|grps_|grpm_|gh_)/.test(data)) {
+    // Multiplayer RPS callbacks are routed explicitly before other actions.
+    // This avoids older callback dispatchers treating grpm_* buttons as unknown.
+    if (data.startsWith('grpm_')) {
+      const result = await handleGameCallback(env, cq, data);
+      if (result && result.toast) {
+        return tg(env, 'answerCallbackQuery', {
+          callback_query_id: cq.id,
+          text: result.toast,
+          show_alert: !!result.alert
+        });
+      }
+      if (result) {
+        return tg(env, 'answerCallbackQuery', {
+          callback_query_id: cq.id
+        });
+      }
+      return tg(env, 'answerCallbackQuery', {
+        callback_query_id: cq.id,
+        text: 'This RPS button is no longer valid. Start a new round with /rps.',
+        show_alert: true
+      });
+    }
+
+    if (/^(gq_|gr_|ge_|grps_|gh_)/.test(data)) {
       const result = await handleGameCallback(env, cq, data);
       if (result && result.toast) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: result.toast, show_alert: !!result.alert });
       return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id });
