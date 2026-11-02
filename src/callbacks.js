@@ -49,6 +49,7 @@ export async function handleCallback(cq, env) {
 
       if (section === 'main') {
         const rows = [
+          [{ text: H.games.title, callback_data: `help_games:${origin}` }],
           [{ text: H.ask.title, callback_data: `help_ask:${origin}` }],
           [{ text: H.contest.title, callback_data: `help_contest:${origin}` }],
           [{ text: H.wallet.title, callback_data: `help_wallet:${origin}` }],
