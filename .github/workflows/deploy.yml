@@ -31,6 +31,7 @@ jobs:
             TURSO_DB_URL
             TURSO_AUTH_TOKEN
             OWNER_ID
+            OWNER_IDS
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
@@ -38,4 +39,5 @@ jobs:
           TURSO_DB_URL: ${{ secrets.TURSO_DB_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
+          OWNER_IDS: ${{ secrets.OWNER_IDS }}
           
