@@ -7,7 +7,7 @@ import { getHelp, helpMainView } from './help.js';
 import { handleSettingsCb, settingsView } from './settings.js';
 import { handleJoin, handleSubmitCmd, groupContestStatus, dmContestStatus, forceContest } from './contest.js';
 import { handleVotingCommand } from './voting.js';
-import { sendWallet, handleClaim, showLeaderboard } from './users.js';
+import { sendWallet, handleClaim, showLeaderboard, handleSendCoins } from './users.js';
 import { sendAnonMessage } from './anon.js';
 import {
   handleOwnerCmd, delcontestGroupView, startDeldb,
@@ -90,6 +90,7 @@ async function handleGroupMessage(msg, env) {
   if (cmd.name === 'contest') return groupContestStatus(env, chatId, msg.message_id);
   if (['vote', 'voting', 'voteresult', 'votestart', 'voteend'].includes(cmd.name)) return handleVotingCommand(env, msg, cmd);
   if (cmd.name === 'claim') return handleClaim(env, chatId, msg.from, msg.message_id);
+  if (cmd.name === 'sendcoins') return handleSendCoins(env, msg, cmd);
   if (cmd.name === 'wallet') return sendWallet(env, chatId, msg.from, msg.message_id);
   if (cmd.name === 'leaderboard') return showLeaderboard(env, chatId, msg.from, 'coins', 'group', msg.message_id);
 
@@ -513,6 +514,7 @@ export async function setupCommands(env) {
     { command: 'voteresult', description: 'Contest standings/results' },
     { command: 'claim', description: 'Daily coins' },
     { command: 'wallet', description: 'Coin balance' },
+    { command: 'sendcoins', description: 'Send coins to a group member' },
     { command: 'leaderboard', description: 'Top 10 group' },
     { command: 'help', description: 'Help' },
   ];
