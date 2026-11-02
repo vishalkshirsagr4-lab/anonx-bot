@@ -74,27 +74,29 @@ export async function handleGameCommand(env, msg, cmd) {
   }
   if (name === 'quiz' || name === 'riddle' || name === 'emoji') return startChoiceGame(env, chatId, from, name);
   if (name === 'rps') {
-    const target = msg.reply_to_message?.from;
-    if (!target || target.is_bot || target.id === from.id) {
-      return send(env, chatId,
-        '✊ <b>Member vs Member RPS</b>\n\nReply to another member’s message with /rps to challenge them. Both players must choose a hand.');
-    }
     const id = Date.now().toString(36);
     const session = {
-      id, type: 'rps', status: 'pending',
-      p1: from.id, p1Name: from.first_name || 'Player',
-      p2: target.id, p2Name: target.first_name || 'Player',
-      choices: {}, expires: Date.now() + 120000
+      id,
+      type: 'rps',
+      status: 'lobby',
+      host: from.id,
+      players: {
+        [String(from.id)]: { id: from.id, name: from.first_name || 'Player' }
+      },
+      choices: {},
+      expires: Date.now() + 180000
     };
     const rpsKey = 'game:rps:' + chatId + ':' + id;
-    await kvPut(env, rpsKey, session, 120);
+    await kvPut(env, rpsKey, session, 180);
     return send(env, chatId,
-      '✊ <b>Rock, Paper, Scissors — Player Challenge</b>\n\n' +
-      '<b>' + esc(session.p1Name) + '</b> challenged <b>' + esc(session.p2Name) + '</b>.\n' +
-      'Only the challenged member can accept.',
-      { reply_markup: { inline_keyboard: [[
-        { text: '⚔️ Accept challenge', callback_data: 'grps_join_' + id }
-      ]] } }
+      '✊ <b>Group Rock, Paper, Scissors</b>\n\n' +
+      '<b>' + esc(session.players[String(from.id)].name) + '</b> opened a group round.\n' +
+      'Members: tap Join, then the host starts the hand selection. Choices stay hidden until the round ends.\n\n' +
+      'The winning hand earns 10 🪙 per winning player. If the round is tied, nobody earns coins.',
+      { reply_markup: { inline_keyboard: [
+        [{ text: '🙋 Join round', callback_data: 'grpm_join_' + id }],
+        [{ text: '▶️ Start choosing (host)', callback_data: 'grpm_start_' + id }]
+      ] } }
     );
   }
   if (name === 'word') {
@@ -173,71 +175,130 @@ export async function handleGameCallback(env, cq, data) {
     await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' + esc(session.question));
     return { toast: 'Correct! +15 coins' };
   }
-  if (data.startsWith('grps_join_')) {
-    const id = data.slice('grps_join_'.length);
+  if (data.startsWith('grpm_join_')) {
+    const id = data.slice('grpm_join_'.length);
     const rpsKey = 'game:rps:' + chatId + ':' + id;
     const session = await kvGet(env, rpsKey, true);
-    if (!session || session.expires <= Date.now() || session.status !== 'pending') {
-      return { toast: 'This challenge expired.', alert: true };
+    if (!session || session.expires <= Date.now() || session.status !== 'lobby') {
+      return { toast: 'The joining phase has ended.', alert: true };
     }
-    if (userId !== session.p2) return { toast: 'Only the challenged member can accept.', alert: true };
-    const updated = { ...session, status: 'playing' };
-    if (!(await claimSession(env, rpsKey, session, updated))) {
-      return { toast: 'Please tap Accept again.', alert: false };
-    }
-    await editCq(env, cq,
-      '✊ <b>Rock, Paper, Scissors</b>\n\n' +
-      '<b>' + esc(session.p1Name) + '</b> vs <b>' + esc(session.p2Name) + '</b>\n' +
-      'Both players: choose your hand. Your choice stays hidden until both have picked.',
-      { inline_keyboard: [[
-        { text: '✊ Rock', callback_data: 'grps_' + id + '_0' },
-        { text: '✋ Paper', callback_data: 'grps_' + id + '_1' },
-        { text: '✌️ Scissors', callback_data: 'grps_' + id + '_2' }
-      ]] }
-    );
-    return { toast: 'Challenge accepted! Choose your hand.' };
-  }
-  if ((match = data.match(/^grps_([a-z0-9]+)_([0-2])$/))) {
-    const rpsKey = 'game:rps:' + chatId + ':' + match[1];
-    const session = await kvGet(env, rpsKey, true);
-    if (!session || session.expires <= Date.now() || session.status !== 'playing') {
-      return { toast: 'This round is not active.', alert: true };
-    }
-    if (userId !== session.p1 && userId !== session.p2) {
-      return { toast: 'You are not one of the two players.', alert: true };
-    }
-    if (session.choices?.[String(userId)] !== undefined) {
-      return { toast: 'You have already chosen your hand.', alert: true };
-    }
-    const choice = Number(match[2]);
+    if (session.players[String(userId)]) return { toast: 'You already joined this round.' };
+    const playerName = cq.from.first_name || 'Player';
     const updated = {
       ...session,
-      choices: { ...(session.choices || {}), [String(userId)]: choice }
+      players: {
+        ...session.players,
+        [String(userId)]: { id: userId, name: playerName }
+      }
     };
-    const bothChosen = updated.choices[String(session.p1)] !== undefined &&
-      updated.choices[String(session.p2)] !== undefined;
-    if (bothChosen) updated.status = 'done';
     if (!(await claimSession(env, rpsKey, session, updated))) {
-      return { toast: 'Choice not saved. Please tap once more.', alert: false };
+      return { toast: 'Please tap Join again.', alert: false };
     }
-    if (!bothChosen) {
-      return { toast: 'Your hand is locked in. Waiting for the other player.' };
-    }
-    const p1 = updated.choices[String(session.p1)];
-    const p2 = updated.choices[String(session.p2)];
-    const labels = ['Rock', 'Paper', 'Scissors'];
-    const winner = p1 === p2 ? 0 : ((p1 - p2 + 3) % 3 === 1 ? session.p1 : session.p2);
-    if (winner) await addCoins(env, winner, 10);
-    const result = winner === 0
-      ? '🤝 It is a draw! No coins awarded.'
-      : '🏆 <b>' + esc(winner === session.p1 ? session.p1Name : session.p2Name) + '</b> wins and earns 10 🪙!';
     await editCq(env, cq,
-      '✊ <b>Rock, Paper, Scissors — Result</b>\n\n' +
-      '<b>' + esc(session.p1Name) + '</b>: ' + labels[p1] + '\n' +
-      '<b>' + esc(session.p2Name) + '</b>: ' + labels[p2] + '\n\n' + result
+      '✊ <b>Group Rock, Paper, Scissors</b>\n\n' +
+      Object.values(updated.players).map((p, i) => (i + 1) + '. ' + esc(p.name)).join('\n') +
+      '\n\n' + Object.keys(updated.players).length + ' member(s) joined. The host can start the round.',
+      { inline_keyboard: [
+        [{ text: '🙋 Join round', callback_data: 'grpm_join_' + id }],
+        [{ text: '▶️ Start choosing (host)', callback_data: 'grpm_start_' + id }]
+      ] }
+    );
+    return { toast: 'You joined the RPS round!' };
+  }
+  if (data.startsWith('grpm_start_')) {
+    const id = data.slice('grpm_start_'.length);
+    const rpsKey = 'game:rps:' + chatId + ':' + id;
+    const session = await kvGet(env, rpsKey, true);
+    if (!session || session.expires <= Date.now() || session.status !== 'lobby') {
+      return { toast: 'This round cannot be started.', alert: true };
+    }
+    if (userId !== session.host) return { toast: 'Only the round host can start it.', alert: true };
+    if (Object.keys(session.players).length < 2) return { toast: 'At least two members must join.', alert: true };
+    const updated = { ...session, status: 'choosing' };
+    if (!(await claimSession(env, rpsKey, session, updated))) return { toast: 'Round changed. Try again.', alert: false };
+    await editCq(env, cq,
+      '✊ <b>Group Rock, Paper, Scissors</b>\n\n' +
+      Object.values(updated.players).map((p, i) => (i + 1) + '. ' + esc(p.name)).join('\n') +
+      '\n\nEach joined member: choose one hand. Your choice is hidden until the host finishes the round.',
+      { inline_keyboard: [[
+        { text: '✊ Rock', callback_data: 'grpm_pick_' + id + '_0' },
+        { text: '✋ Paper', callback_data: 'grpm_pick_' + id + '_1' },
+        { text: '✌️ Scissors', callback_data: 'grpm_pick_' + id + '_2' }
+      ], [
+        { text: '🏁 Finish round (host)', callback_data: 'grpm_end_' + id }
+      ]] }
+    );
+    return { toast: 'Round started. Choose your hand!' };
+  }
+  if ((match = data.match(/^grpm_pick_([a-z0-9]+)_([0-2])$/))) {
+    const id = match[1];
+    const rpsKey = 'game:rps:' + chatId + ':' + id;
+    const session = await kvGet(env, rpsKey, true);
+    if (!session || session.expires <= Date.now() || session.status !== 'choosing') {
+      return { toast: 'Hand selection is closed.', alert: true };
+    }
+    if (!session.players[String(userId)]) return { toast: 'Join the round first.', alert: true };
+    if (session.choices?.[String(userId)] !== undefined) return { toast: 'Your hand is already locked in.', alert: true };
+    const updated = {
+      ...session,
+      choices: { ...(session.choices || {}), [String(userId)]: Number(match[2]) }
+    };
+    if (!(await claimSession(env, rpsKey, session, updated))) return { toast: 'Choice not saved. Tap once more.', alert: false };
+    const chosen = Object.keys(updated.choices).length;
+    const total = Object.keys(updated.players).length;
+    await editCq(env, cq,
+      '✊ <b>Group Rock, Paper, Scissors</b>\n\n' +
+      chosen + ' of ' + total + ' members have locked in their hands.\n' +
+      'Choices are hidden. The host can finish the round when everyone has chosen.',
+      { inline_keyboard: [[
+        { text: '✊ Rock', callback_data: 'grpm_pick_' + id + '_0' },
+        { text: '✋ Paper', callback_data: 'grpm_pick_' + id + '_1' },
+        { text: '✌️ Scissors', callback_data: 'grpm_pick_' + id + '_2' }
+      ], [
+        { text: '🏁 Finish round (host)', callback_data: 'grpm_end_' + id }
+      ]] }
+    );
+    return { toast: 'Your hand is locked in!' };
+  }
+  if (data.startsWith('grpm_end_')) {
+    const id = data.slice('grpm_end_'.length);
+    const rpsKey = 'game:rps:' + chatId + ':' + id;
+    const session = await kvGet(env, rpsKey, true);
+    if (!session || session.expires <= Date.now() || session.status !== 'choosing') {
+      return { toast: 'This round is not active.', alert: true };
+    }
+    if (userId !== session.host) return { toast: 'Only the round host can finish it.', alert: true };
+    const players = Object.values(session.players);
+    const chosenIds = Object.keys(session.choices || {});
+    if (chosenIds.length < 2) return { toast: 'At least two members must choose a hand.', alert: true };
+    const updated = { ...session, status: 'done' };
+    if (!(await claimSession(env, rpsKey, session, updated))) return { toast: 'Round already finished.', alert: false };
+    const counts = [0, 0, 0];
+    for (const choice of Object.values(session.choices)) counts[choice] += 1;
+    const activeHands = counts.map((count, hand) => count ? hand : -1).filter(hand => hand >= 0);
+    let winningHand = -1;
+    if (activeHands.length === 2) {
+      const a = activeHands[0], b = activeHands[1];
+      winningHand = (a - b + 3) % 3 === 1 ? a : b;
+    }
+    const labels = ['Rock', 'Paper', 'Scissors'];
+    const lines = players.map(p => {
+      const choice = session.choices[String(p.id)];
+      return esc(p.name) + ': ' + (choice === undefined ? 'Did not choose' : labels[choice]);
+    });
+    const winners = winningHand < 0 ? [] : players.filter(p => session.choices[String(p.id)] === winningHand);
+    for (const player of winners) await addCoins(env, player.id, 10);
+    const result = winners.length
+      ? '🏆 <b>Winning hand: ' + labels[winningHand] + '</b>\n' +
+        winners.map(p => esc(p.name)).join(', ') + ' ' + (winners.length === 1 ? 'wins' : 'win') +
+        ' 10 🪙 each!'
+      : '🤝 <b>It is a draw!</b> No coins awarded. (A draw happens when only one hand or all three hands were chosen.)';
+    await editCq(env, cq,
+      '✊ <b>Group Rock, Paper, Scissors — Results</b>\n\n' +
+      lines.join('\n') + '\n\n' + result
     );
     await kvDel(env, rpsKey);
-    return { toast: winner ? 'Round complete! Winner gets 10 coins.' : 'Round ended in a draw.' };
+    return { toast: 'Group round finished!' };
   }
   if ((match = data.match(/^gh_([a-z0-9]+)_([0-8])$/))) {
     const session = await kvGet(env, 'game:hunt:' + chatId + ':' + match[1], true);
