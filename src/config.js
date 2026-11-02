@@ -190,7 +190,7 @@ export function applyEnv(env) {
   const parsedOwnerIds = String(ownerIdsRaw || '')
     .split(',')
     .map(value => value.trim())
-    .filter(value => /^\\d+$/.test(value))
+    .filter(value => /^\d+$/.test(value))
     .map(Number)
     .filter(value => Number.isSafeInteger(value) && value > 0);
   state.OWNER_IDS = [...new Set([Number(state.OWNER_ID), ...parsedOwnerIds])];
