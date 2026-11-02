@@ -1,6 +1,6 @@
 
 // src/owner.js
-import { state, rankOf } from './config.js';
+import { state, rankOf, isOwner } from './config.js';
 import { q, kvGet, kvPut, kvDel } from './db.js';
 import { send, editCq } from './cards.js';
 import { esc } from './helpers.js';
@@ -936,7 +936,7 @@ export async function handleDeldbBackspace(env, cq) {
 export async function handleDeldbConfirm(env, cq) {
   const userId = cq.from.id;
 
-  if (String(userId) !== String(state.OWNER_ID)) {
+  if (!isOwner(userId)) {
     return {
       toast: '⛔ Owner only.',
       alert: true
