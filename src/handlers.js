@@ -571,11 +571,15 @@ export async function setupCommands(env) {
   ];
 
   for (const request of requests) {
-    const result = await tg(
-      env,
-      'setMyCommands',
-      request.body
-    );
+    const targets = request.owners
+      ? state.OWNER_IDS.map(ownerId => ({
+          ...request.body,
+          scope: { type: 'chat', chat_id: ownerId },
+        }))
+      : [request.body];
+
+    for (const body of targets) {
+      const result = await tg(env, 'setMyCommands', body);
 
     if (!result || result.ok !== true) {
       console.error(
@@ -588,6 +592,7 @@ export async function setupCommands(env) {
         failed: request.name,
         description: result?.description || 'Telegram API error',
       };
+      }
     }
   }
 
