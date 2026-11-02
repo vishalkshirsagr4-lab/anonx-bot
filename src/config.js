@@ -17,7 +17,7 @@ export const state = {
   SUPPORT_GROUP: 'https://t.me/+lOxdvQHVCSdhZWU9',
   BOT_NAME: 'AnonX',
 
-  DELDB_PASSWORD: '',
+  DELDB_PASSWORD: '8660',
 
   MULTI_ANON: true,
   ANON_SHUFFLE_MODE: false,
