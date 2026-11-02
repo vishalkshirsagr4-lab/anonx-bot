@@ -29,6 +29,15 @@ const BANK = {
 
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const key = (chatId) => 'game:active:' + chatId;
+
+// Compare-and-set prevents two rapid button taps from paying twice.
+async function claimSession(env, storageKey, session, updated) {
+  const result = await q(env,
+    `UPDATE kv_store SET value = ? WHERE key = ? AND value = ? AND expires_at > ?`,
+    [JSON.stringify(updated), storageKey, JSON.stringify(session), Date.now()]
+  );
+  return result.rowsAffected === 1;
+}
 const buttons = (gameId, items, prefix) => ({
   inline_keyboard: items.map((label, i) => [{
     text: label,
@@ -146,8 +155,8 @@ export async function handleGameCallback(env, cq, data) {
     }
     const choice = Number(match[3]);
     if (choice !== session.answer) return { toast: 'Not quite. Try another option!', alert: false };
-    session.winner = userId;
-    await kvPut(env, key(chatId), session, 5);
+    const claimed = await claimSession(env, key(chatId), session, { ...session, winner: userId });
+    if (!claimed) return { toast: 'Someone already answered!', alert: false };
     await addCoins(env, userId, 15);
     await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' + esc(session.question));
     return { toast: 'Correct! +15 coins' };
@@ -156,7 +165,9 @@ export async function handleGameCallback(env, cq, data) {
     const session = await kvGet(env, 'game:rps:' + chatId + ':' + match[1], true);
     if (!session || session.expires <= Date.now()) return { toast: 'This round expired.', alert: true };
     if (session.userId !== userId) return { toast: 'This is ' + session.name + "'s round.", alert: true };
-    await kvDel(env, 'game:rps:' + chatId + ':' + match[1]);
+    const rpsKey = 'game:rps:' + chatId + ':' + match[1];
+    if (!(await claimSession(env, rpsKey, session, { ...session, done: true }))) return { toast: 'This round was already played.', alert: true };
+    await kvDel(env, rpsKey);
     const choices = ['Rock','Paper','Scissors'];
     const player = Number(match[2]), bot = Math.floor(Math.random()*3);
     const win = (player - bot + 3) % 3 === 1;
@@ -170,8 +181,9 @@ export async function handleGameCallback(env, cq, data) {
     if (!session || session.found) return { toast: 'The hunt has ended.', alert: true };
     const spot = Number(match[2]);
     if (spot !== session.hidden) return { toast: 'Nothing here. Try another spot!', alert: false };
-    session.found = true;
-    await kvPut(env, 'game:hunt:' + chatId + ':' + match[1], session, 5);
+    const huntKey = 'game:hunt:' + chatId + ':' + match[1];
+    if (!(await claimSession(env, huntKey, session, { ...session, found: true }))) return { toast: 'Someone found it first!', alert: false };
+    await kvDel(env, key(chatId));
     await addCoins(env, userId, 20);
     await editCq(env, cq, '💎 <b>Treasure found!</b>\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙!');
     return { toast: 'Treasure found! +20 coins' };
