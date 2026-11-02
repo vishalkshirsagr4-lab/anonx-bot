@@ -170,7 +170,7 @@ async function handleDM(msg, env, ctx) {
   if (cmd) {
     switch (cmd.name) {
       case 'start': {
-        if (isOwner(userId)) await setupCommands(env);
+        await setupCommands(env);
         if (cmd.arg.startsWith('reply_')) {
           const postId = cmd.arg.split('_')[1];
           await kvPut(env, `pending_reply:${userId}`, postId, 600);
