@@ -16,12 +16,19 @@ import {
   deleteContestPermanently
 } from './owner.js';
 import { getBotInfo, esc } from './helpers.js';
+import { handleGameCallback } from './games.js';
 
 export async function handleCallback(cq, env) {
   const data = cq.data || '';
   const userId = cq.from.id;
 
   try {
+    if (/^(gq_|gr_|ge_|grps_|gh_)/.test(data)) {
+      const result = await handleGameCallback(env, cq, data);
+      if (result && result.toast) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text: result.toast, show_alert: !!result.alert });
+      return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id });
+    }
+
     // ─── Help navigation ───
     if (data.startsWith('help_')) {
       const [action, callbackOrigin] = data.split(':');
