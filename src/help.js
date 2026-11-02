@@ -6,11 +6,6 @@ let HELP = null;
 export function getHelp() {
   if (HELP) return HELP;
   HELP = {
-    games: {
-      title: '🎮 Game Center',
-      cmds: `<b>🎮 Games</b>\n\n/game — Open Game Center\n/quiz — Quick quiz\n/rps — Rock, paper, scissors\n/word — Guess the hidden word\n/riddle — Solve a riddle\n/dice — Roll the dice\n/emoji — Guess the emoji phrase\n/hunt — Find hidden treasure`,
-      rules: `<b>🏅 Rewards</b>\n\nWin games to earn coins. Send word guesses as normal group messages.`,
-    },
     ask: {
       title: '❓ Ask & Reply',
       cmds: `<b>❓ Ask &amp; Reply</b>\n\n/ask <code>&lt;text&gt;</code> — Post an anonymous question\n/ask <code>-100…</code> <code>&lt;text&gt;</code> — Post to a specific group\nReply to media with /ask — Post anonymously\n/reveal — Reveal who is behind a post\n/wallet — Check your coin balance\n/cancel — Cancel any pending action`,
@@ -44,7 +39,6 @@ export function helpMainView(userId, origin = 'help') {
   
   const H = getHelp();
   const rows = [
-    [{ text: H.games.title, callback_data: `help_games:${origin}` }],
     [{ text: H.ask.title, callback_data: `help_ask:${origin}` }],
     [{ text: H.contest.title, callback_data: `help_contest:${origin}` }],
     [{ text: H.wallet.title, callback_data: `help_wallet:${origin}` }],
