@@ -80,6 +80,7 @@ async function handleGroupMessage(msg, env) {
     });
   }
 
+  if (cmd.name === 'myid') return send(env, chatId, '🆔 Your Telegram user ID: <code>' + msg.from.id + '</code>');
   if (['game', 'quiz', 'rps', 'word', 'riddle', 'dice', 'emoji', 'hunt'].includes(cmd.name)) return handleGameCommand(env, msg, cmd);
   if (cmd.name === 'start') return groupStart(env, msg);
   if (cmd.name === 'help') return groupHelp(env, msg);
@@ -213,6 +214,7 @@ async function handleDM(msg, env, ctx) {
         return send(env, chatId, `✅ Cancelled.`);
       }
 
+      case 'myid': return send(env, chatId, '🆔 Your Telegram user ID: <code>' + userId + '</code>');
       case 'wallet': return sendWallet(env, chatId, msg.from);
       case 'claim': return handleClaim(env, chatId, msg.from);
       case 'leaderboard': return showLeaderboard(env, chatId, msg.from, 'coins', 'global');
