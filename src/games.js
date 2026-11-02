@@ -194,14 +194,10 @@ export async function handleGameCallback(env, cq, data) {
     if (!(await claimSession(env, rpsKey, session, updated))) {
       return { toast: 'Please tap Join again.', alert: false };
     }
-    await editCq(env, cq,
-      '✊ <b>Group Rock, Paper, Scissors</b>\n\n' +
-      Object.values(updated.players).map((p, i) => (i + 1) + '. ' + esc(p.name)).join('\n') +
-      '\n\n' + Object.keys(updated.players).length + ' member(s) joined. The host can start the round.',
-      { inline_keyboard: [
-        [{ text: '🙋 Join round', callback_data: 'grpm_join_' + id }],
-        [{ text: '▶️ Start choosing (host)', callback_data: 'grpm_start_' + id }]
-      ] }
+    await send(env, chatId,
+      '🙋 <b>' + esc(playerName) + '</b> joined the RPS round. ' +
+      '<b>' + Object.keys(updated.players).length + ' member(s)</b> are in.\n' +
+      'The host can press Start on the original RPS message.'
     );
     return { toast: 'You joined the RPS round!' };
   }
@@ -216,17 +212,17 @@ export async function handleGameCallback(env, cq, data) {
     if (Object.keys(session.players).length < 2) return { toast: 'At least two members must join.', alert: true };
     const updated = { ...session, status: 'choosing' };
     if (!(await claimSession(env, rpsKey, session, updated))) return { toast: 'Round changed. Try again.', alert: false };
-    await editCq(env, cq,
-      '✊ <b>Group Rock, Paper, Scissors</b>\n\n' +
-      Object.values(updated.players).map((p, i) => (i + 1) + '. ' + esc(p.name)).join('\n') +
-      '\n\nEach joined member: choose one hand. Your choice is hidden until the host finishes the round.',
-      { inline_keyboard: [[
+    await send(env, chatId,
+      '✊ <b>RPS is starting!</b>\n\n' +
+      'Players: ' + Object.values(updated.players).map(p => esc(p.name)).join(', ') + '\n' +
+      'Everyone who joined: choose ONE hand below. Your choice is private until the result is announced.',
+      { reply_markup: { inline_keyboard: [[
         { text: '✊ Rock', callback_data: 'grpm_pick_' + id + '_0' },
         { text: '✋ Paper', callback_data: 'grpm_pick_' + id + '_1' },
         { text: '✌️ Scissors', callback_data: 'grpm_pick_' + id + '_2' }
       ], [
         { text: '🏁 Finish round (host)', callback_data: 'grpm_end_' + id }
-      ]] }
+      ]] } }
     );
     return { toast: 'Round started. Choose your hand!' };
   }
@@ -244,20 +240,8 @@ export async function handleGameCallback(env, cq, data) {
       choices: { ...(session.choices || {}), [String(userId)]: Number(match[2]) }
     };
     if (!(await claimSession(env, rpsKey, session, updated))) return { toast: 'Choice not saved. Tap once more.', alert: false };
-    const chosen = Object.keys(updated.choices).length;
-    const total = Object.keys(updated.players).length;
-    await editCq(env, cq,
-      '✊ <b>Group Rock, Paper, Scissors</b>\n\n' +
-      chosen + ' of ' + total + ' members have locked in their hands.\n' +
-      'Choices are hidden. The host can finish the round when everyone has chosen.',
-      { inline_keyboard: [[
-        { text: '✊ Rock', callback_data: 'grpm_pick_' + id + '_0' },
-        { text: '✋ Paper', callback_data: 'grpm_pick_' + id + '_1' },
-        { text: '✌️ Scissors', callback_data: 'grpm_pick_' + id + '_2' }
-      ], [
-        { text: '🏁 Finish round (host)', callback_data: 'grpm_end_' + id }
-      ]] }
-    );
+    // Keep selections private; the callback toast confirms the player's choice.
+    // The host can finish after at least two players have selected.
     return { toast: 'Your hand is locked in!' };
   }
   if (data.startsWith('grpm_end_')) {
@@ -293,7 +277,7 @@ export async function handleGameCallback(env, cq, data) {
         winners.map(p => esc(p.name)).join(', ') + ' ' + (winners.length === 1 ? 'wins' : 'win') +
         ' 10 🪙 each!'
       : '🤝 <b>It is a draw!</b> No coins awarded. (A draw happens when only one hand or all three hands were chosen.)';
-    await editCq(env, cq,
+    await send(env, chatId,
       '✊ <b>Group Rock, Paper, Scissors — Results</b>\n\n' +
       lines.join('\n') + '\n\n' + result
     );
