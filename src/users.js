@@ -18,7 +18,7 @@ export async function sendWallet(env, chatId, from, replyTo) {
 export async function handleSendCoins(env, msg, cmd) {
   const chatId = String(msg.chat.id);
   const senderId = Number(msg.from.id);
-  const parts = (cmd.arg || '').trim().split(/\\s+/).filter(Boolean);
+  const parts = (cmd.arg || '').trim().split(/\s+/).filter(Boolean);
   let targetId = null;
   let amountText = '';
 
@@ -49,7 +49,7 @@ export async function handleSendCoins(env, msg, cmd) {
   if (!Number.isSafeInteger(targetId) || targetId <= 0 || targetId === senderId) {
     return send(env, chatId, `❌ You cannot send coins to yourself.`, { reply_to_message_id: msg.message_id });
   }
-  if (!/^[1-9]\\d{0,8}$/.test(amountText)) {
+  if (!/^[1-9]\d{0,8}$/.test(amountText)) {
     return send(env, chatId, `❌ Enter a valid amount from 1 to 999,999,999 coins.`, { reply_to_message_id: msg.message_id });
   }
 
