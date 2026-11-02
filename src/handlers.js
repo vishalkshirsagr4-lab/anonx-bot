@@ -9,6 +9,7 @@ import { handleJoin, handleSubmitCmd, groupContestStatus, dmContestStatus, force
 import { handleVotingCommand } from './voting.js';
 import { sendWallet, handleClaim, showLeaderboard, handleSendCoins } from './users.js';
 import { sendAnonMessage } from './anon.js';
+import { handleGameCommand, handleGameMessage } from './games.js';
 import {
   handleOwnerCmd, delcontestGroupView, startDeldb,
   addContestOne, handleDelContestDM, listContests, bulkAddStart, bulkAddFromFile,
@@ -64,7 +65,7 @@ async function handleGroupMessage(msg, env) {
   }
 
   const cmd = parseCommand(msg.text || '');
-  if (!cmd) return;
+  if (!cmd) return handleGameMessage(env, msg);
   if (cmd.bot) {
     const bi = await getBotInfo(env);
     if (bi && bi.username.toLowerCase() !== cmd.bot.toLowerCase()) return;
@@ -79,6 +80,7 @@ async function handleGroupMessage(msg, env) {
     });
   }
 
+  if (['game', 'quiz', 'rps', 'word', 'riddle', 'dice', 'emoji', 'hunt'].includes(cmd.name)) return handleGameCommand(env, msg, cmd);
   if (cmd.name === 'start') return groupStart(env, msg);
   if (cmd.name === 'help') return groupHelp(env, msg);
   if (cmd.name === 'setting') {
@@ -515,6 +517,14 @@ export async function setupCommands(env) {
     { command: 'claim', description: 'Daily coins' },
     { command: 'wallet', description: 'Coin balance' },
     { command: 'sendcoins', description: 'Send coins to a group member' },
+    { command: 'game', description: 'Open the Game Center' },
+    { command: 'quiz', description: 'Play a quick quiz' },
+    { command: 'rps', description: 'Rock paper scissors' },
+    { command: 'word', description: 'Guess the hidden word' },
+    { command: 'riddle', description: 'Solve a riddle' },
+    { command: 'dice', description: 'Roll the dice' },
+    { command: 'emoji', description: 'Guess the emoji phrase' },
+    { command: 'hunt', description: 'Find hidden treasure' },
     { command: 'leaderboard', description: 'Top 10 group' },
     { command: 'help', description: 'Help' },
   ];
