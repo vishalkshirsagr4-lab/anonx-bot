@@ -21,7 +21,7 @@ import {
   botIdentity
 } from './helpers.js';
 import { detectMedia, validateSubmissionForMode, formatMediaBadge } from './media.js';
-import { handlePikoDM, handlePikoGroup } from './piko.js';
+import { handlePikoDM, handlePikoGroup, handlePikoAI } from './piko.js';
 
 // ────────────────────────────────────────────────────────────
 // UPDATE ENTRY
@@ -272,6 +272,7 @@ async function handleDM(msg, env, ctx) {
       return send(env, chatId, `❌ Failed to post.`);
     }
   }
+  if (!cmd) return handlePikoAI(msg, env);
 }
 
 // ────────────────────────────────────────────────────────────
