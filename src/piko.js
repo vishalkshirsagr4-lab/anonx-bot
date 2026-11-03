@@ -365,8 +365,19 @@ export async function handlePikoAI(msg,env){
   await ensureSchema(env);
   if(await banned(env,msg.from.id))return true;
   await profile(env,msg.from);
-  try{void tg(env,'sendChatAction',{chat_id:msg.chat.id,action:'typing'}).catch(()=>{});const answer=await groqChat(env,msg.from.id,msg.text);await reply(env,msg.chat.id,esc(answer));}
-  catch(e){console.error('Piko AI request failed:',e?.message||String(e));await reply(env,msg.chat.id,'Piko AI is temporarily unavailable. Please try again later.');}
+  const inGroup=msg.chat.type==='group'||msg.chat.type==='supergroup';
+  // In groups, make it clear who Piko is answering and attach the answer
+  // to the exact message that called Piko. HTML mention works even without username.
+  const groupReply=inGroup?{reply_to_message_id:msg.message_id}: {};
+  const prefix=inGroup?mention(msg.from)+' ':'';
+  try{
+    void tg(env,'sendChatAction',{chat_id:msg.chat.id,action:'typing'}).catch(()=>{});
+    const answer=await groqChat(env,msg.from.id,msg.text);
+    await reply(env,msg.chat.id,prefix+esc(answer),groupReply);
+  }catch(e){
+    console.error('Piko AI request failed:',e?.message||String(e));
+    await reply(env,msg.chat.id,prefix+'Piko AI is temporarily unavailable. Please try again later.',groupReply);
+  }
   return true;
 }
 
