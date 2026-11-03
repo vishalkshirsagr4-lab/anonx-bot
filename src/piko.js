@@ -122,9 +122,9 @@ async function sendFunMedia(env,chatId,name,replyTo){
     chat_id:chatId,
     [item.type==='animation'?'animation':'sticker']:item.file_id
   };
-  // Do not allow Telegram to silently drop the reply relationship.
-  // If replyTo is supplied, Telegram must attach this media to that message.
-  if(replyTo)payload.reply_parameters={message_id:replyTo};
+  // Telegram Bot API's legacy reply_to_message_id works for both stickers
+  // and animations. replyTo is the original member message ID, not the command ID.
+  if(replyTo)payload.reply_to_message_id=replyTo;
   const result=await tg(env,item.type==='animation'?'sendAnimation':'sendSticker',payload);
   if(!result.ok){
     console.error('Piko fun media send failed:',name,result.error_code,result.description);
