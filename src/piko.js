@@ -200,7 +200,7 @@ async function whisperCommand(env,msg,cmd) {
 }
 
 
-const NAZRIYA_SEARCH_URL = 'https://nazriya.teamgod.online/api/search';
+const NAZRIYA_API_BASE = 'https://nazriya.teamgod.online/api';
 const MUSIC_LINK_HOSTS = new Set([
   'youtube.com','www.youtube.com','youtu.be','music.youtube.com',
   'open.spotify.com','spotify.com','music.apple.com','itunes.apple.com',
@@ -231,66 +231,146 @@ function safeMusicPlatformLink(raw) {
   try {
     const parsed = new URL(raw);
     if (parsed.protocol !== 'https:' || !MUSIC_LINK_HOSTS.has(parsed.hostname.toLowerCase())) return '';
-    if (/\.(mp3|m4a|aac|ogg|opus|wav|flac|mp4|mkv|webm)(?:$|\?)/i.test(parsed.pathname + parsed.search)) return '';
     return parsed.href;
   } catch { return ''; }
 }
-function musicLinks(item) {
-  const audio = safeMusicPlatformLink(musicField(item, ['official_audio_url','audio_page','listen_url','spotify_url','jiosaavn_url','music_url','official_url']));
-  const video = safeMusicPlatformLink(musicField(item, ['official_video_url','video_page','youtube_url','video_link','official_video']));
-  const general = safeMusicPlatformLink(musicField(item, ['web_url','url','link']));
-  return { audio: audio || general, video: video || general };
+function musicAuthorized(value) {
+  if (!value || typeof value !== 'object') return false;
+  if (value.authorized === true || value.rights_cleared === true || value.user_owned === true) return true;
+  const license = String(value.license || value.licence || value.license_status || value.rights || '').toLowerCase();
+  return /public.?domain|creative.?commons|royalty.?free|licensed|permission.?granted|user.?owned/.test(license);
+}
+function mediaPayloadUrl(payload, kind) {
+  const candidates = [payload, payload?.data, payload?.result, payload?.media, payload?.data?.media].filter(Boolean);
+  const keys = kind === 'audio'
+    ? ['audio_url','stream_url','media_url','download_url','file_url','url']
+    : ['video_url','stream_url','media_url','download_url','file_url','url'];
+  for (const candidate of candidates) {
+    for (const key of keys) {
+      const raw = candidate?.[key];
+      if (typeof raw === 'string' && raw.trim()) {
+        try {
+          const u = new URL(raw);
+          if (u.protocol === 'https:' && !['localhost','127.0.0.1','0.0.0.0'].includes(u.hostname)) return u.href;
+        } catch {}
+      }
+    }
+  }
+  return '';
+}
+async function fetchNazriyaJson(url) {
+  const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
+  const payload = await response.json();
+  if (!response.ok || payload?.status === 'error' || payload?.success === false) {
+    throw new Error('Nazriya API request failed (' + response.status + ')');
+  }
+  return payload;
+}
+async function searchNazriya(env, query) {
+  const url = new URL(NAZRIYA_API_BASE + '/search');
+  url.searchParams.set('q', query);
+  url.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
+  return musicItems(await fetchNazriyaJson(url.toString())).slice(0, 5);
+}
+async function sendNazriyaMedia(env, msg, item, kind) {
+  // Search metadata alone is not proof of distribution rights. Require an explicit
+  // rights declaration from the selected result before requesting playable media.
+  if (!musicAuthorized(item)) {
+    return { ok: false, reason: 'This result has no public-domain, licensed, or user-owned rights declaration.' };
+  }
+  const id = String(item.id || '').trim();
+  if (!id || !/^[A-Za-z0-9_-]{3,80}$/.test(id)) {
+    return { ok: false, reason: 'The selected result has no valid media ID.' };
+  }
+  const endpoint = new URL(NAZRIYA_API_BASE + (kind === 'audio' ? '/audio' : '/video'));
+  endpoint.searchParams.set('id', id);
+  endpoint.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
+  const payload = await fetchNazriyaJson(endpoint.toString());
+  if (!musicAuthorized(payload) && !musicAuthorized(payload?.data) && !musicAuthorized(payload?.result)) {
+    return { ok: false, reason: 'The media provider did not confirm distribution rights.' };
+  }
+  const mediaUrl = mediaPayloadUrl(payload, kind);
+  if (!mediaUrl) return { ok: false, reason: 'The provider did not return a direct HTTPS media URL.' };
+  const mediaResponse = await fetch(mediaUrl, { signal: AbortSignal.timeout(25000) });
+  if (!mediaResponse.ok) throw new Error('Media source returned HTTP ' + mediaResponse.status);
+  const contentType = String(mediaResponse.headers.get('content-type') || '').toLowerCase();
+  const expected = kind === 'audio' ? contentType.startsWith('audio/') : contentType.startsWith('video/');
+  if (!expected) return { ok: false, reason: 'The direct source did not return a valid ' + kind + ' media file.' };
+  const blob = await mediaResponse.blob();
+  if (!blob.size || blob.size > 45 * 1024 * 1024) {
+    return { ok: false, reason: 'The media file is empty or exceeds Telegram upload limits.' };
+  }
+  const title = musicField(item, ['title','name','song','track']) || 'Piko music';
+  const safeTitle = title.replace(/[\\r\\n]/g, ' ').slice(0, 900);
+  const caption = '🎵 <b>' + esc(safeTitle) + '</b>\n👤 ' + esc(musicField(item, ['uploader','artist','author']) || 'Artist not listed');
+  const method = kind === 'audio' ? 'sendAudio' : 'sendVideo';
+  const field = kind === 'audio' ? 'audio' : 'video';
+  const ext = kind === 'audio' ? 'mp3' : 'mp4';
+  const sent = await tgForm(env, method, {
+    chat_id: msg.chat.id,
+    caption,
+    parse_mode: 'HTML',
+    reply_to_message_id: msg.message_id
+  }, field, blob, 'piko-' + id + '.' + ext);
+  if (!sent?.ok) throw new Error(sent?.description || 'Telegram rejected the media upload');
+  return { ok: true };
 }
 async function musicSearchCommand(env, msg, cmd) {
   const query = String(cmd.arg || '').trim().slice(0, 120);
-  if (!query) return reply(env, msg.chat.id, '🎵 <b>Piko Music</b>\n\n/search song name — search results\n/play song name — official audio link\n/song song name — same as /play\n/video song name — official video link\n/music song name — show audio and video choices');
+  if (!query) return reply(env, msg.chat.id, '🎵 <b>Piko Music</b>\n\n/search song — search metadata\n/play song — send authorized audio to this group\n/song song — same as /play\n/video song — send authorized video to this group\n/music song — send authorized audio and video');
   const apiKey = String(env?.NAZRIYA_API_KEY || '').trim();
   if (!apiKey) return reply(env, msg.chat.id, '⚙️ Music search is not configured. Add <code>NAZRIYA_API_KEY</code> as a Cloudflare Worker secret.');
-  const status = await reply(env, msg.chat.id, '🔎 Searching music…');
+  const status = await reply(env, msg.chat.id, '🔎 Searching music…', { reply_to_message_id: msg.message_id });
   if (!status?.ok || !status.result?.message_id) return true;
+  const statusId = status.result.message_id;
+  const editStatus = async text => tg(env, 'editMessageText', {
+    chat_id: msg.chat.id, message_id: statusId, text, parse_mode: 'HTML', disable_web_page_preview: true
+  });
   try {
-    const url = new URL(NAZRIYA_SEARCH_URL);
-    url.searchParams.set('q', query);
-    url.searchParams.set('key', apiKey);
-    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
-    const payload = await response.json();
-    if (!response.ok || payload?.status === 'error' || payload?.success === false) throw new Error('Music provider request failed');
-    const items = musicItems(payload).slice(0, 5);
+    const items = await searchNazriya(env, query);
     if (!items.length) {
-      await tg(env, 'editMessageText', { chat_id: msg.chat.id, message_id: status.result.message_id, text: '🔎 No matching results. Try another song title or artist.' });
+      await editStatus('🔎 No matching results. Try another song title or artist.');
       return true;
     }
-    const lines = items.map((item, index) => {
-      const title = musicField(item, ['title','name','song','track']) || 'Unknown title';
-      const artist = musicField(item, ['artist','artists','singer','subtitle','author']) || 'Artist not listed';
-      const album = musicField(item, ['album','album_name']);
-      const links = musicLinks(item);
-      const parts = [(index + 1) + '. <b>' + esc(title.slice(0, 140)) + '</b>', '   👤 ' + esc(artist.slice(0, 100))];
-      if (album) parts.push('   💿 ' + esc(album.slice(0, 90)));
-      if (cmd.name === 'video') {
-        if (links.video) parts.push('   🎬 <a href="' + esc(links.video) + '">Official video</a>');
-      } else if (cmd.name === 'play' || cmd.name === 'song') {
-        if (links.audio) parts.push('   🎧 <a href="' + esc(links.audio) + '">Official audio / listen</a>');
-      } else if (cmd.name === 'music') {
-        if (links.audio) parts.push('   🎧 <a href="' + esc(links.audio) + '">Audio choice</a>');
-        if (links.video) parts.push('   🎬 <a href="' + esc(links.video) + '">Video choice</a>');
-      } else {
-        if (links.audio) parts.push('   🎧 <a href="' + esc(links.audio) + '">Audio</a>');
-        if (links.video) parts.push('   🎬 <a href="' + esc(links.video) + '">Video</a>');
+    if (cmd.name === 'search') {
+      const lines = items.map((item, i) => {
+        const title = musicField(item, ['title','name','song','track']) || 'Unknown title';
+        const uploader = musicField(item, ['uploader','artist','author','singer']) || 'Artist not listed';
+        const duration = Number(item.duration);
+        return (i + 1) + '. <b>' + esc(title.slice(0, 140)) + '</b>\n   👤 ' + esc(uploader.slice(0, 100)) +
+          (Number.isFinite(duration) && duration > 0 ? '\n   ⏱ ' + Math.floor(duration / 60) + ':' + String(duration % 60).padStart(2,'0') : '');
+      });
+      await editStatus('🔎 <b>Matching music results</b>\n\n' + lines.join('\n\n') +
+        '\n\nUse /play ' + esc(query) + ' or /video ' + esc(query) + ' for authorized media.');
+      return true;
+    }
+    const selected = items[0];
+    const title = musicField(selected, ['title','name','song','track']) || 'Selected result';
+    await editStatus('🎵 Selected: <b>' + esc(title.slice(0, 140)) + '</b>\nPreparing authorized media for this group…');
+    const kinds = cmd.name === 'video' ? ['video']
+      : cmd.name === 'music' ? ['audio','video'] : ['audio'];
+    let sentCount = 0;
+    const failures = [];
+    for (const kind of kinds) {
+      try {
+        const result = await sendNazriyaMedia(env, msg, selected, kind);
+        if (result.ok) sentCount++;
+        else failures.push((kind === 'audio' ? 'Audio: ' : 'Video: ') + result.reason);
+      } catch (error) {
+        console.error('Piko ' + kind + ' delivery failed:', String(error?.message || error).slice(0, 180));
+        failures.push((kind === 'audio' ? 'Audio: ' : 'Video: ') + 'provider or Telegram delivery failed.');
       }
-      return parts.join('\n');
-    });
-    const heading = cmd.name === 'video' ? '🎬 <b>Official video options</b>'
-      : (cmd.name === 'play' || cmd.name === 'song') ? '🎧 <b>Official audio options</b>'
-      : cmd.name === 'music' ? '🎵 <b>Choose audio or video</b>'
-      : '🔎 <b>Matching music results</b>';
-    const text = heading + '\n\n' + lines.join('\n\n') +
-      (cmd.name === 'search' ? '\n\nUse /music ' + esc(query) + ' for audio and video choices.' : '') +
-      '\n\nPiko shares supported official platform links; it does not download media.';
-    await tg(env, 'editMessageText', { chat_id: msg.chat.id, message_id: status.result.message_id, text, parse_mode: 'HTML', disable_web_page_preview: true });
+    }
+    if (sentCount) {
+      await editStatus('✅ Sent ' + sentCount + ' playable media item' + (sentCount === 1 ? '' : 's') + ' to this group.' +
+        (failures.length ? '\n\n' + failures.map(esc).join('\n') : ''));
+    } else {
+      await editStatus('⚠️ No playable media was sent.\n\n' + failures.map(esc).join('\n') +
+        '\n\nThe search result must explicitly identify public-domain, licensed, or user-owned media, and the media endpoint must return a direct audio/video file.');
+    }
   } catch (error) {
-    console.error('Piko music search failed:', String(error?.message || error).slice(0, 180));
-    await tg(env, 'editMessageText', { chat_id: msg.chat.id, message_id: status.result.message_id, text: '⚠️ Music search is temporarily unavailable. Please try again later.' });
+    console.error('Piko music command failed:', String(error?.message || error).slice(0, 180));
+    await editStatus('⚠️ Music service is temporarily unavailable. Please try again later.');
   }
   return true;
 }
