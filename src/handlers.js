@@ -111,6 +111,8 @@ async function handleGroupMessage(msg, env) {
 
 async function groupStart(env, msg) {
   const chatId = String(msg.chat.id);
+  // Refresh Telegram's group command menu when the bot is started in a group.
+  await setupCommands(env);
   const id = await botIdentity(env);
   const spec = await botProfileSpec(env, id);
   const caption = `🤖 <b>${esc(state.BOT_NAME)}</b>\n\nUsername: @${esc(id.botUsername)}\nOwner: ${id.ownerName ? esc(id.ownerName) : '—'}\n\nUse the buttons below:`;
@@ -535,29 +537,33 @@ export async function setupCommands(env) {
   ];
 
   const group = [
-    { command: 'start', description: 'Bot info' },
+    { command: 'start', description: 'Bot info and refresh commands' },
+    { command: 'help', description: 'Group help' },
+    { command: 'myid', description: 'Show your Telegram ID' },
     { command: 'ask', description: 'Anonymous question (opens DM)' },
     { command: 'contest', description: 'Contest status' },
     { command: 'vote', description: 'View entries and cast one vote' },
     { command: 'voting', description: 'Live voting status' },
     { command: 'voteresult', description: 'Contest standings/results' },
     { command: 'claim', description: 'Daily coins' },
-    { command: 'wallet', description: 'Coin balance' },
-    { command: 'credits', description: 'Credits and coins' },
+    { command: 'wallet', description: 'Piko wallet and coins' },
+    { command: 'credits', description: 'Piko credits and coins' },
     { command: 'daily', description: 'Earn daily coins' },
     { command: 'work', description: 'Earn coins' },
-    { command: 'crime', description: 'Fictional coin challenge' },
-    { command: 'rob', description: 'Coin game (reply to user)' },
-    { command: 'pay', description: 'Send coins to a member' },
-    { command: 'img', description: 'Generate an AI image' },
-    { command: 'roll', description: 'Roll a dice' },
-    { command: 'trivia', description: 'Play trivia' },
-    { command: 'ship', description: 'Friendship match score' },
-    { command: 'hug', description: 'Send a friendly hug' },
-    { command: 'slap', description: 'Playful action' },
-    { command: 'punch', description: 'Playful action' },
-    { command: 'kick', description: 'Playful action' },
+    { command: 'crime', description: 'Play a fictional coin challenge' },
+    { command: 'rob', description: 'Coin game (reply to a member)' },
+    { command: 'pay', description: 'Send coins (reply to a member)' },
     { command: 'sendcoins', description: 'Send coins to a group member' },
+    { command: 'img', description: 'Generate an AI image' },
+    { command: 'ship', description: 'Friendship match score' },
+    { command: 'roll', description: 'Roll a dice' },
+    { command: 'hug', description: 'Friendly sticker (reply to a message)' },
+    { command: 'wave', description: 'Wave sticker (reply to a message)' },
+    { command: 'highfive', description: 'High-five sticker (reply to a message)' },
+    { command: 'cheer', description: 'Cheer sticker (reply to a message)' },
+    { command: 'slap', description: 'Playful sticker (reply to a message)' },
+    { command: 'punch', description: 'Playful sticker (reply to a message)' },
+    { command: 'kick', description: 'Playful sticker (reply to a message)' },
     { command: 'game', description: 'Open the Game Center' },
     { command: 'quiz', description: 'Play a quick quiz' },
     { command: 'rps', description: 'Rock paper scissors' },
@@ -567,7 +573,10 @@ export async function setupCommands(env) {
     { command: 'emoji', description: 'Guess the emoji phrase' },
     { command: 'hunt', description: 'Find hidden treasure' },
     { command: 'leaderboard', description: 'Top 10 group' },
-    { command: 'help', description: 'Help' },
+  ];
+
+  const groupAdmins = [
+    ...group,
     { command: 'welcome', description: 'Admin: toggle welcome messages' },
     { command: 'setwelcome', description: 'Admin: customize welcome text' },
     { command: 'delwelcome', description: 'Admin: reset welcome message' },
@@ -576,13 +585,9 @@ export async function setupCommands(env) {
     { command: 'filters', description: 'Admin: list keyword filters' },
     { command: 'ban', description: 'Admin: ban a replied-to member' },
     { command: 'unban', description: 'Admin: unban a replied-to member' },
-  ];
-
-  const groupAdmins = [
-    ...group,
     { command: 'votestart', description: 'Admin: start voting now' },
     { command: 'voteend', description: 'Admin: end voting and publish results' },
-    { command: 'setting', description: 'Contest settings' },
+    { command: 'setting', description: 'Admin: contest settings' },
   ];
 
   const requests = [
