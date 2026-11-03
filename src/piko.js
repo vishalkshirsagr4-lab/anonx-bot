@@ -54,7 +54,7 @@ function duration(ms) { const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/6
 
 async function economy(env,msg,cmd) {
   const id=msg.from.id, a=argsOf(cmd.arg), p=await profile(env,msg.from), now=Date.now();
-  if(cmd.name==='credits') return reply(env,msg.chat.id,`💼 <b>Piko Wallet</b>\n\n✨ Credits: <b>${p.credits}</b>\n🪙 Coins: <b>${p.coins||0}</b>\n\nUse /daily and /work to earn coins.`);
+  if(cmd.name==='credits'||cmd.name==='wallet') return reply(env,msg.chat.id,`💼 <b>Piko Wallet</b>\n\n✨ Credits: <b>${p.credits}</b>\n🪙 Coins: <b>${p.coins||0}</b>\n\nUse /daily and /work to earn coins.`);
   if(cmd.name==='daily'||cmd.name==='work'||cmd.name==='crime'||cmd.name==='rob'){
     const field={daily:'daily_at',work:'work_at',crime:'crime_at',rob:'rob_at'}[cmd.name], hours={daily:24,work:1,crime:2,rob:6}[cmd.name];
     const wait=remaining(p[field],hours); if(wait) return reply(env,msg.chat.id,'⏳ Try again in '+duration(wait)+'.');
@@ -202,14 +202,14 @@ async function adminCommand(env,msg,cmd){
   return true;
 }
 
-const PIKO_COMMANDS=new Set(['credits','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await banned(env,msg.from.id))return true;
   if(msg.voice||msg.audio){await profile(env,msg.from);await voiceCommand(env,msg);return true;}
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     await profile(env,msg.from);
-    if(['credits','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
+    if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
     if(['ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
     if(['admin','stats','addcredits','addcoins','gban','ungban'].includes(cmd.name)){await adminCommand(env,msg,cmd);return true;}
