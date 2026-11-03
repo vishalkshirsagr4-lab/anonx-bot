@@ -178,9 +178,11 @@ export async function handleGameCallback(env, cq, data) {
     if (choice !== session.answer) return { toast: 'Not quite. Try another option!', alert: false };
     const claimed = await claimSession(env, key(chatId), session, { ...session, winner: userId });
     if (!claimed) return { toast: 'Someone already answered!', alert: false };
+    // Release the group lock immediately so a Telegram edit/reward API hiccup
+    // cannot leave the group blocked after a completed game.
+    await kvDel(env, key(chatId));
     await addCoins(env, userId, 15);
     await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' + esc(session.question));
-    await kvDel(env, key(chatId));
     return { toast: 'Correct! +15 coins' };
   }
   if (data.startsWith('grpm_join_')) {
