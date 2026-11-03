@@ -52,6 +52,14 @@ export async function handleCallback(cq, env) {
       return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id });
     }
 
+    if (data.startsWith('piko_trivia_')) {
+      const parts = data.split('_');
+      const ownerId = Number(parts[2]);
+      const correct = parts[3] === '1';
+      const text = ownerId !== userId ? 'This question belongs to another player.' : (correct ? 'Correct! 🎉' : 'Not quite. Try another question!');
+      return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: true });
+    }
+
     // ─── Help navigation ───
     if (data.startsWith('help_')) {
       const [action, callbackOrigin] = data.split(':');
