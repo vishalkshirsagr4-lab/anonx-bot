@@ -329,27 +329,15 @@ export async function handlePikoGroup(msg,env,cmd){
     // Answer group AI only when Piko is mentioned or a member replies to Piko.
     const botInfo=await getBotInfo(env);
     const username=String(botInfo?.username||'').toLowerCase();
+    const username=String(botInfo?.username||'').toLowerCase();
     const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
-    const escapeRegex=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\    const username=String(botInfo?.username||'').toLowerCase();
     const lowerText=msg.text.toLowerCase();
-    const hasMention=!!username&&lowerText.includes('@'+username);
-    const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
-    if(hasMention||repliedToPiko){
-      const prompt=username?msg.text.replace(new RegExp('@'+username,'ig'),'').trim():msg.text.trim();
-      await handlePikoAI({...msg,text:prompt||'Please help me.'},env);
-      return true;
-    }');
-    const escapedUsername=escapeRegex(username);
-    const escapedName=escapeRegex(botName);
-    // Respond to @username, plain bot-name calls, or direct replies.
-    const usernameMention=!!username&&new RegExp('(^|\\s)@'+escapedUsername+'(?=$|\\s|[,.!?])','i').test(msg.text);
-    const nameMention=!!botName&&new RegExp('(^|\\s)'+escapedName+'(?=$|\\s|[,.!?])','i').test(msg.text);
+    const words=lowerText.split(/[^a-z0-9_]+/);
+    const usernameMention=!!username&&lowerText.includes('@'+username);
+    const nameMention=!!botName&&words.includes(botName);
     const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
     if(usernameMention||nameMention||repliedToPiko){
-      const prompt=msg.text
-        .replace(new RegExp('@'+escapedUsername,'ig'),'')
-        .replace(new RegExp('(^|\\s)'+escapedName+'(?=$|\\s|[,.!?])','ig'),' ')
-        .trim();
+      const prompt=msg.text.split('@'+username).join(' ').split(botName).join(' ').trim();
       await handlePikoAI({...msg,text:prompt||'Someone called your name. Reply naturally.'},env);
       return true;
     }
