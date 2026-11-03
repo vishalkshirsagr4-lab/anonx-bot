@@ -44,19 +44,19 @@ from pyrogram.errors import FloodWait, ChatAdminRequired, UserAdminInvalid
 #  STEP 1 ➜  API_ID  (number)
 #    Kahan se milega: https://my.telegram.org → API Development Tools
 #    Example: 12345678
-API_ID = int(os.environ.get("API_ID", "39777249"))          # ← APNA API ID YAHAN
+API_ID = int(os.environ.get("API_ID", "0"))          # ← APNA API ID YAHAN
 
 # ──────────────────────────────────────────────────────────────────
 #  STEP 2 ➜  API_HASH  (string)
 #    Kahan se milega: https://my.telegram.org → API Development Tools
 #    Example: "abc123def456ghi789jkl012mno345"
-API_HASH = os.environ.get("API_HASH", "178dfaac9b6b27d8d33ada594994f969")            # ← APNA API HASH YAHAN
+API_HASH = os.environ.get("API_HASH", "")            # ← APNA API HASH YAHAN
 
 # ──────────────────────────────────────────────────────────────────
 #  STEP 3 ➜  BOT_TOKEN  (string)
 #    Kahan se milega: Telegram pe @BotFather → /newbot
 #    Example: "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ123456789"
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8924239698:AAGfFNb1cSEzBXvW24NvlKSbYTR5mbfI5M0")          # ← APNA BOT TOKEN YAHAN
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")          # ← APNA BOT TOKEN YAHAN
 
 # ──────────────────────────────────────────────────────────────────
 #  STEP 4 ➜  GROQ_API_KEY  (string)
@@ -68,7 +68,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")   # ← APNA GROQ KEY YAHAN
 #  STEP 5 ➜  OWNER_ID  (number)  — OPTIONAL, admin panel ke liye
 #    Kahan se milega: Telegram pe @userinfobot ko message karo
 #    Example: 987654321
-OWNER_ID = int(os.environ.get("OWNER_ID", "8783373485"))      # ← APNA TELEGRAM USER ID YAHAN
+OWNER_ID = int(os.environ.get("OWNER_ID", "0"))      # ← APNA TELEGRAM USER ID YAHAN
 
 # ══════════════════════════════════════════════════════════════════
 #   ▲▲▲  BAS ITNA HI BHARNA THA  ▲▲▲   Aage mat chhedo!
