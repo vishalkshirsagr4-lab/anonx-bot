@@ -273,11 +273,6 @@ async function searchNazriya(env, query) {
   return musicItems(await fetchNazriyaJson(url.toString())).slice(0, 5);
 }
 async function sendNazriyaMedia(env, msg, item, kind) {
-  // Search metadata alone is not proof of distribution rights. Require an explicit
-  // rights declaration from the selected result before requesting playable media.
-  if (!musicAuthorized(item)) {
-    return { ok: false, reason: 'This result has no public-domain, licensed, or user-owned rights declaration.' };
-  }
   const id = String(item.id || '').trim();
   if (!id || !/^[A-Za-z0-9_-]{3,80}$/.test(id)) {
     return { ok: false, reason: 'The selected result has no valid media ID.' };
