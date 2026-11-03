@@ -185,15 +185,18 @@ export async function handleGameCallback(env, cq, data) {
       return { toast: 'This game has ended.', alert: true };
     }
     const choice = Number(match[3]);
-    if (choice !== session.answer) return { toast: 'Not quite. Try another option!', alert: false };
-    const claimed = await claimSession(env, key(chatId), session, { ...session, winner: userId });
-    if (!claimed) return { toast: 'Someone already answered!', alert: false };
-    // Release the group lock immediately so a Telegram edit/reward API hiccup
-    // cannot leave the group blocked after a completed game.
+    const claimed = await claimSession(env, key(chatId), session, { ...session, winner: userId, status: 'done' });
+    if (!claimed) return { toast: 'This question has already been answered.', alert: false };
+    // One attempt per player/question: the first selected option ends the round.
     await kvDel(env, key(chatId));
-    await addCoins(env, userId, 15);
-    await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' + esc(session.question));
-    return { toast: 'Correct! +15 coins' };
+    if (choice === session.answer) {
+      await addCoins(env, userId, 15);
+      await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\\n\\n' + esc(session.question));
+      return { toast: 'Correct! +15 coins' };
+    }
+    const correct = session.choices?.[session.answer] || 'the correct option';
+    await editCq(env, cq, '❌ <b>Game over!</b>\\n' + esc(cq.from.first_name || 'Player') + ' used their one attempt.\\n\\nCorrect answer: <b>' + esc(correct) + '</b>\\n\\n' + esc(session.question));
+    return { toast: 'Wrong answer. Game over!', alert: true };
   }
   if (data.startsWith('grpm_join_')) {
     const id = data.slice('grpm_join_'.length);
