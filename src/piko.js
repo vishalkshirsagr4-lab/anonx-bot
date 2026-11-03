@@ -258,24 +258,15 @@ export async function handlePikoGroup(msg,env,cmd){
   if(cmd&&PIKO_COMMANDS.has(cmd.name)&&['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){await groupTools(env,msg,cmd);return true;}
   if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
   if(!cmd&&msg.text){
-    // In groups, answer only when a member explicitly mentions Piko or replies to Piko.
-    // This works with Telegram's default privacy mode and avoids replying to every message.
+    // Answer group AI only when Piko is mentioned or a member replies to Piko.
     const botInfo=await getBotInfo(env);
-    const username=botInfo?.username||'';
-    const mentionPattern=username?new RegExp('(^|\\\\s)@'+username.replace(/[.*+?^$\\{\\}()|[\\]\\\\]/g,'\\\\  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
-  if(!cmd&&msg.text){
-    const chat=String(msg.chat.id),text=msg.text.toLowerCase();
-    const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
-    const match=f.rows.find(x=>x.keyword&&text.includes(x.keyword.toLowerCase()));
-    if(match)await reply(env,msg.chat.id,esc(match.response));
-  }
-  return false;')+'(?![A-Za-z0-9_])','i'):null;
-    const hasMention=!!(mentionPattern&&mentionPattern.test(msg.text));
+    const username=String(botInfo?.username||'').toLowerCase();
+    const lowerText=msg.text.toLowerCase();
+    const hasMention=!!username&&lowerText.includes('@'+username);
     const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
     if(hasMention||repliedToPiko){
-      const prompt=msg.text.replace(mentionPattern||/$^/,'').trim();
-      const cleanMsg={...msg,text:prompt||'Please help me.'};
-      await handlePikoAI(cleanMsg,env);
+      const prompt=username?msg.text.replace(new RegExp('@'+username,'ig'),'').trim():msg.text.trim();
+      await handlePikoAI({...msg,text:prompt||'Please help me.'},env);
       return true;
     }
     const chat=String(msg.chat.id),text=msg.text.toLowerCase();
