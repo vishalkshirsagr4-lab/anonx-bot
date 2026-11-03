@@ -69,7 +69,7 @@ async function groqChat(env, userId, input) {
  * Generate fresh game content with Groq. Game state, answer validation,
  * rewards and expiry remain local and deterministic.
  */
-export async function generateGameContent(env, type, topic = 'mixed') {
+export async function generateGameContent(env, type, topic = 'mixed', avoidQuestions = []) {
   const key = groqKey(env);
   if (!key) return null;
   const mode = String(topic || 'mixed').slice(0, 60);
@@ -83,18 +83,19 @@ export async function generateGameContent(env, type, topic = 'mixed') {
       : mode.toLowerCase().includes('famous')
         ? 'Use famous movies, games, anime, sports and pop-culture trivia.'
         : 'Choose a varied fun topic: anime, gaming, science, pop culture, internet culture, riddles or everyday knowledge.';
-  const task = type === 'quiz' ? 'Write one fresh multiple-choice trivia question.'
-    : type === 'riddle' ? 'Write one original, solvable short riddle with four plausible options.'
-    : type === 'emoji' ? 'Create one emoji rebus / phrase guessing challenge with four plausible options.'
-    : 'Choose one common, valid six-letter English word; do not use names or obscure words.';
+  const task = type === 'quiz' ? 'Write one fresh, EASY multiple-choice trivia question suitable for a casual group chat.'
+    : type === 'riddle' ? 'Write one very easy, short, original riddle that most people can solve.'
+    : type === 'emoji' ? 'Create one very easy emoji guessing puzzle using familiar emojis and a common word, food, movie, or phrase.'
+    : 'Choose one common, easy six-letter English word; do not use names or obscure words.';
+  const avoid = Array.isArray(avoidQuestions) ? avoidQuestions.slice(-30).map(x => String(x).slice(0,180)) : [];
   const response = await fetch(GROQ_URL + '/chat/completions', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: env?.GROQ_CHAT_MODEL || CHAT_MODEL,
       messages: [
-        { role: 'system', content: 'You create original, fun, safe group-game content. Output valid JSON only, no markdown.' },
-        { role: 'user', content: task + ' Theme: ' + theme + ' Requested category: ' + mode + '. Make it fresh and not a common repeated example. ' + schema }
+        { role: 'system', content: 'You create ORIGINAL, EASY, beginner-friendly group-game content. Never make a hard, tricky, obscure, academic, or confusing question. Output valid JSON only, no markdown.' },
+        { role: 'user', content: task + ' Theme: ' + theme + ' Requested category: ' + mode + '. Create a different question from every item in this recent-used list. Do not reuse or paraphrase them: ' + JSON.stringify(avoid) + '. Keep wording short and answer choices simple and clearly distinct. ' + schema }
       ],
       temperature: 1,
       max_completion_tokens: 220,
