@@ -1,11 +1,11 @@
 // Piko feature pack: Groq AI, voice transcription, credits, economy, fun and group tools.
 // All credentials are supplied through Cloudflare Worker secrets/bindings.
 import { state, isOwner } from './config.js';
-import { q } from './db.js';
+import { q, batch } from './db.js';
 import { tg, tgForm } from './telegram.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
-const CHAT_MODEL = 'qwen/qwen3.8-27b';
+const CHAT_MODEL = 'openai/gpt-oss-20b';
 const VOICE_MODEL = 'whisper-large-v3-turbo';
 let schemaReady = false;
 let schemaPromise = null;
@@ -28,7 +28,7 @@ async function ensureSchema(env) {
     `CREATE TABLE IF NOT EXISTS piko_filters (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, keyword TEXT NOT NULL, response TEXT NOT NULL, UNIQUE(chat_id,keyword))`,
     `CREATE TABLE IF NOT EXISTS piko_bans (user_id INTEGER PRIMARY KEY, reason TEXT, created_at INTEGER NOT NULL)`
   ];
-  for (const sql of statements) await q(env, sql);
+  await batch(env, statements.map(sql => ({ sql })));
   schemaReady = true;
   })().catch(error => { schemaPromise = null; throw error; });
   return schemaPromise;
@@ -36,10 +36,13 @@ async function ensureSchema(env) {
 
 async function profile(env, user) {
   await ensureSchema(env);
-  await q(env, `INSERT OR IGNORE INTO piko_profiles(user_id,created_at) VALUES(?,?)`, [user.id,Date.now()]);
-  await q(env, `INSERT INTO users(user_id,first_name,username,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET first_name=excluded.first_name,username=excluded.username,updated_at=excluded.updated_at`, [user.id,user.first_name||'',user.username||'',Date.now(),Date.now()]);
-  const r=await q(env,`SELECT p.*,u.coins FROM piko_profiles p LEFT JOIN users u ON u.user_id=p.user_id WHERE p.user_id=?`,[user.id]);
-  return r.rows[0] || {credits:30,coins:0};
+  const now=Date.now();
+  const results=await batch(env,[
+    {sql:`INSERT OR IGNORE INTO piko_profiles(user_id,created_at) VALUES(?,?)`,args:[user.id,now]},
+    {sql:`INSERT INTO users(user_id,first_name,username,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET first_name=excluded.first_name,username=excluded.username,updated_at=excluded.updated_at`,args:[user.id,user.first_name||'',user.username||'',now,now]},
+    {sql:`SELECT p.*,u.coins FROM piko_profiles p LEFT JOIN users u ON u.user_id=p.user_id WHERE p.user_id=?`,args:[user.id]}
+  ]);
+  return results[2].rows[0] || {credits:30,coins:0};
 }
 async function reply(env, chatId, text, extra={}) { return tg(env,'sendMessage',{chat_id:chatId,text,parse_mode:'HTML',...extra}); }
 async function ownerOnly(env, msg) { if (!isOwner(msg.from.id)) { await reply(env,msg.chat.id,'⛔ Owner only.'); return false; } return true; }
@@ -49,12 +52,15 @@ async function groqChat(env, userId, input) {
   const key=groqKey(env); if(!key) return 'Piko AI is not configured yet. Add GROQ_API_KEY as a Cloudflare secret.';
   const h=await q(env,'SELECT role,content FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 8',[userId]);
   const messages=[{role:'system',content:'You are Piko, a friendly, helpful and playful assistant. Keep replies concise, respectful and safe. You can understand English, Hindi and Kannada. Do not insult, bully, or provide dangerous instructions.'},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
-  const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_completion_tokens:350,temperature:0.7})});
+  const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_completion_tokens:180,reasoning_effort:'low',temperature:0.5})});
   const data=await res.json(); if(!res.ok) throw new Error(data.error?.message||'Groq request failed');
   const answer=String(data.choices?.[0]?.message?.content||'I could not generate a reply.').slice(0,4000);
-  await q(env,'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)',[userId,'user',input.slice(0,4000),Date.now()]);
-  await q(env,'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)',[userId,'assistant',answer,Date.now()]);
-  await q(env,'DELETE FROM piko_history WHERE user_id=? AND id NOT IN (SELECT id FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 16)',[userId,userId]);
+  const savedAt=Date.now();
+  await batch(env,[
+    {sql:'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)',args:[userId,'user',input.slice(0,4000),savedAt]},
+    {sql:'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)',args:[userId,'assistant',answer,savedAt]},
+    {sql:'DELETE FROM piko_history WHERE user_id=? AND id NOT IN (SELECT id FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 16)',args:[userId,userId]}
+  ]);
   return answer;
 }
 function remaining(last, hours) { if(!last)return 0; return Math.max(0,hours*3600000-(Date.now()-last)); }
@@ -235,7 +241,7 @@ export async function handlePikoAI(msg,env){
   await ensureSchema(env);
   if(await banned(env,msg.from.id))return true;
   await profile(env,msg.from);
-  try{const answer=await groqChat(env,msg.from.id,msg.text);await reply(env,msg.chat.id,esc(answer));}
+  try{void tg(env,'sendChatAction',{chat_id:msg.chat.id,action:'typing'}).catch(()=>{});const answer=await groqChat(env,msg.from.id,msg.text);await reply(env,msg.chat.id,esc(answer));}
   catch(e){console.error('Piko AI request failed:',e?.message||String(e));await reply(env,msg.chat.id,'Piko AI is temporarily unavailable. Please try again later.');}
   return true;
 }
