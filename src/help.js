@@ -26,6 +26,11 @@ export function getHelp() {
       cmds: `<b>💰 Wallet</b>\n\n/claim — Daily ${CFG.CLAIM_COINS} 🪙\n/wallet — Balance\n/leaderboard — Top 10`,
       rules: `<b>📜 Rules</b>\n\n1. ${CFG.CLAIM_COINS} 🪙 daily.\n2. Resets 12:00 AM ${CFG.TZ_LABEL}.`,
     },
+    piko: {
+      title: '🤖 Piko AI & Fun',
+      cmds: `<b>🤖 Piko Features</b>\\n\\nSend a DM to chat with Piko AI. Send a voice message for transcription.\\n/credits — Credits and coins\\n/img <code>prompt</code> — Generate an image (5 credits)\\n/daily, /work, /crime, /rob, /pay — Economy\\n/ship, /roll, /trivia, /hug, /slap, /punch, /kick — Fun commands\\nGroup admins: /welcome, /setwelcome, /delwelcome, /save, /stop, /filters, /ban, /unban\\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban`,
+      rules: `<b>Notes</b>\\n\\nAI and voice features require GROQ_API_KEY. Image generation costs 5 credits. Group moderation commands require admin permissions.`
+    },
     owner: {
       title: '👑 Owner',
       cmds: `<b>👑 Owner</b>\n\n/addcontest — Add one\n/add — Reply to .txt to bulk-add\n/listcontest — List\n/delcontest — Delete\n/xcontest — Force-start\n/votestart — Start voting early (group)\n/voteend — End voting and publish results (group)\n/deldb — Wipe DB (password)`,
