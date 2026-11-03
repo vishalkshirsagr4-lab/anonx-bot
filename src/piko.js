@@ -284,36 +284,78 @@ async function voiceCommand(env,msg){
 
 async function groupTools(env,msg,cmd){
   const chat=String(msg.chat.id), uid=msg.from.id;
-  const admin=async()=>{const r=await tg(env,'getChatMember',{chat_id:chat,user_id:uid});return r.ok&&['creator','administrator'].includes(r.result.status);};
-  if(['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)&&!(await admin()))return reply(env,chat,'⛔ Group admins only.');
+  const { isAdmin } = await import('./helpers.js');
+  if(!await isAdmin(env,chat,uid)) return reply(env,chat,'⛔ Only this group\'s administrators can use that command.');
+
   if(cmd.name==='welcome'){
-    const on=cmd.arg.trim().toLowerCase();if(!['on','off'].includes(on))return reply(env,chat,'Usage: /welcome on or /welcome off');
-    await q(env,'INSERT INTO piko_groups(chat_id,welcome_enabled) VALUES(?,?) ON CONFLICT(chat_id) DO UPDATE SET welcome_enabled=excluded.welcome_enabled',[chat,on==='on'?1:0]);return reply(env,chat,'Welcome messages turned '+on+'.');
+    const value=cmd.arg.trim().toLowerCase();
+    if(!value){
+      const r=await q(env,'SELECT welcome_enabled FROM piko_groups WHERE chat_id=?',[chat]);
+      const enabled=r.rows.length ? Number(r.rows[0].welcome_enabled)!==0 : true;
+      return reply(env,chat,'👋 Welcome messages are currently <b>'+ (enabled?'ON':'OFF') +'</b>.\nUse /welcome on or /welcome off.');
+    }
+    if(!['on','off'].includes(value)) return reply(env,chat,'Usage: /welcome on or /welcome off');
+    await q(env,'INSERT INTO piko_groups(chat_id,welcome_enabled) VALUES(?,?) ON CONFLICT(chat_id) DO UPDATE SET welcome_enabled=excluded.welcome_enabled',[chat,value==='on'?1:0]);
+    return reply(env,chat,'✅ Welcome messages turned '+value+'.');
   }
+
   if(cmd.name==='setwelcome'){
-    const value=cmd.arg.trim();if(!value||value.length>1000)return reply(env,chat,'Usage: /setwelcome Welcome {first} to {chatname}');
-    await q(env,'INSERT INTO piko_groups(chat_id,welcome_text) VALUES(?,?) ON CONFLICT(chat_id) DO UPDATE SET welcome_text=excluded.welcome_text',[chat,value]);return reply(env,chat,'✅ Welcome text saved.');
+    const value=(cmd.arg.trim() || msg.reply_to_message?.text || msg.reply_to_message?.caption || '').trim();
+    if(!value || value.length>1000) return reply(env,chat,'Usage: /setwelcome Welcome {first} to {chatname}\nYou can also reply to a message with /setwelcome.');
+    await q(env,'INSERT INTO piko_groups(chat_id,welcome_text) VALUES(?,?) ON CONFLICT(chat_id) DO UPDATE SET welcome_text=excluded.welcome_text',[chat,value]);
+    return reply(env,chat,'✅ Custom welcome message saved. Placeholders: {first}, {username}, {chatname}.');
   }
-  if(cmd.name==='delwelcome'){await q(env,'INSERT INTO piko_groups(chat_id,welcome_enabled,welcome_text) VALUES(?,0,?) ON CONFLICT(chat_id) DO UPDATE SET welcome_enabled=0,welcome_text=excluded.welcome_text',[chat,'Welcome {first} to {chatname}! 🎉']);return reply(env,chat,'Welcome message disabled and reset.');}
+
+  if(cmd.name==='delwelcome'){
+    await q(env,'INSERT INTO piko_groups(chat_id,welcome_enabled,welcome_text) VALUES(?,0,?) ON CONFLICT(chat_id) DO UPDATE SET welcome_enabled=0,welcome_text=excluded.welcome_text',[chat,'Welcome {first} to {chatname}! 🎉']);
+    return reply(env,chat,'✅ Welcome messages disabled and the custom text reset. Use /welcome on to enable them again.');
+  }
+
   if(cmd.name==='save'){
-    const a=argsOf(cmd.arg),keyword=(a.shift()||'').toLowerCase(),response=(a.join(' ')||msg.reply_to_message?.text||'').trim();
-    if(!keyword||!response)return reply(env,chat,'Usage: /save keyword response (or reply to a message).');
-    await q(env,'INSERT INTO piko_filters(chat_id,keyword,response) VALUES(?,?,?) ON CONFLICT(chat_id,keyword) DO UPDATE SET response=excluded.response',[chat,keyword.slice(0,80),response.slice(0,1000)]);return reply(env,chat,'✅ Saved keyword filter: '+esc(keyword));
+    const replied=(msg.reply_to_message?.text || msg.reply_to_message?.caption || '').trim();
+    let keyword='', response='';
+    if(replied){
+      keyword=cmd.arg.trim().toLowerCase();
+      response=replied;
+    }else{
+      const split=cmd.arg.trim().match(/^(\S+)\s+([\s\S]+)$/);
+      if(split){keyword=split[1].toLowerCase();response=split[2].trim();}
+    }
+    if(!keyword || !response) return reply(env,chat,'Usage: /save keyword response\nOr reply to a text message with /save keyword.');
+    if(keyword.length>80 || response.length>1000) return reply(env,chat,'❌ Keyword limit: 80 characters. Reply limit: 1000 characters.');
+    await q(env,'INSERT INTO piko_filters(chat_id,keyword,response) VALUES(?,?,?) ON CONFLICT(chat_id,keyword) DO UPDATE SET response=excluded.response',[chat,keyword,response]);
+    return reply(env,chat,'✅ Saved filter for keyword: <code>'+esc(keyword)+'</code>');
   }
+
   if(cmd.name==='stop'){
-    const keyword=cmd.arg.trim().toLowerCase();if(!keyword)return reply(env,chat,'Usage: /stop keyword');
-    await q(env,'DELETE FROM piko_filters WHERE chat_id=? AND keyword=?',[chat,keyword]);return reply(env,chat,'Removed filter: '+esc(keyword));
+    const keyword=cmd.arg.trim().toLowerCase();
+    if(!keyword) return reply(env,chat,'Usage: /stop keyword');
+    const r=await q(env,'DELETE FROM piko_filters WHERE chat_id=? AND keyword=?',[chat,keyword]);
+    return reply(env,chat,r.rowsAffected?'🗑 Removed filter: <code>'+esc(keyword)+'</code>':'ℹ️ No filter found for: <code>'+esc(keyword)+'</code>');
   }
+
   if(cmd.name==='filters'){
-    const r=await q(env,'SELECT keyword FROM piko_filters WHERE chat_id=? ORDER BY keyword',[chat]);return reply(env,chat,r.rows.length?'🔎 <b>Active filters</b>\n'+r.rows.map(x=>'• '+esc(x.keyword)).join('\n'):'No filters configured.');
+    const r=await q(env,'SELECT keyword FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC, keyword LIMIT 50',[chat]);
+    return reply(env,chat,r.rows.length?'🔎 <b>Active filters ('+r.rows.length+')</b>\n'+r.rows.map(x=>'• <code>'+esc(x.keyword)+'</code>').join('\n'):'📭 No filters configured. Add one with /save keyword response.');
   }
+
   if(cmd.name==='ban'||cmd.name==='unban'){
-    const target=msg.reply_to_message?.from;if(!target)return reply(env,chat,'Reply to the member you want to '+cmd.name+'.');
-    const r=await tg(env,cmd.name==='ban'?'banChatMember':'unbanChatMember',{chat_id:chat,user_id:target.id});
-    return reply(env,chat,r.ok?'✅ '+(cmd.name==='ban'?'Banned ':'Unbanned ')+mention(target):'Telegram rejected the action. Check my admin permissions.');
+    const replied=msg.reply_to_message?.from;
+    const numeric=cmd.arg.trim().match(/^\d+$/);
+    const targetId=replied?.id || (numeric?Number(numeric[0]):0);
+    if(!Number.isSafeInteger(Number(targetId)) || Number(targetId)<=0) return reply(env,chat,'Reply to a member with /'+cmd.name+' or use /'+cmd.name+' user_id.');
+    const me=await tg(env,'getMe');
+    if(me.ok && Number(me.result.id)===Number(targetId)) return reply(env,chat,'❌ I cannot apply this action to myself.');
+    const botMember=me.ok?await tg(env,'getChatMember',{chat_id:chat,user_id:me.result.id}):null;
+    if(!botMember?.ok || !['administrator','creator'].includes(botMember.result.status) || (cmd.name==='ban' && botMember.result.status!=='creator' && botMember.result.can_restrict_members!==true)){
+      return reply(env,chat,'⚠️ I need to be a group admin with <b>Ban users</b> permission to do this.');
+    }
+    const method=cmd.name==='ban'?'banChatMember':'unbanChatMember';
+    const result=await tg(env,method,{chat_id:chat,user_id:Number(targetId),...(cmd.name==='unban'?{only_if_banned:true}:{})});
+    if(!result.ok) return reply(env,chat,'❌ Telegram could not '+cmd.name+' that member: '+esc(result.description||'Check my admin permissions and the target user.'));
+    return reply(env,chat,'✅ '+(cmd.name==='ban'?'Banned':'Unbanned')+' user <code>'+Number(targetId)+'</code>.');
   }
 }
-
 async function adminCommand(env,msg,cmd){
   if(!await ownerOnly(env,msg))return true;
   if(cmd.name==='admin'||cmd.name==='stats'){
@@ -394,7 +436,12 @@ export async function handlePikoGroup(msg,env,cmd){
   }
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     if(['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){
-      await groupTools(env,msg,cmd);
+      try {
+        await groupTools(env,msg,cmd);
+      } catch(error) {
+        console.error('Piko group admin command failed:',cmd.name,error?.message||String(error));
+        await reply(env,msg.chat.id,'❌ That command failed. Check that I have the required group permissions, then try again.');
+      }
       return true;
     }
     // Route every other Piko command through the same tested dispatcher used in DM.
