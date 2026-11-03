@@ -36,9 +36,9 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
   const used = Array.isArray(recent) ? recent : [];
   let item = null;
   // Ask Groq again if it returns a recently-used question.
-  for (let attempt = 0; attempt < 3 && !item; attempt++) {
+  for (let attempt = 0; attempt < 5 && !item; attempt++) {
     try {
-      const fresh = await generateGameContent(env, type, topic, used);
+      const fresh = await generateGameContent(env, type, attempt ? topic + ' (new variation ' + attempt + ')' : topic, used);
       if (!fresh || typeof fresh.q !== 'string' || !Array.isArray(fresh.a) || fresh.a.length !== 4 ||
           !Number.isInteger(fresh.c) || fresh.c < 0 || fresh.c > 3 ||
           fresh.a.some(x => typeof x !== 'string' || !x.trim())) continue;
@@ -47,7 +47,7 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
       if (!duplicate) item = fresh;
     } catch (error) {
       console.error('Groq game generation failed:', error?.message || String(error));
-      break;
+      // Retry malformed or temporarily failed generations instead of ending the game immediately.
     }
   }
   if (!item) {
