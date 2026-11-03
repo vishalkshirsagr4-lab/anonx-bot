@@ -3,6 +3,7 @@
 import { state, isOwner } from './config.js';
 import { q, batch } from './db.js';
 import { tg, tgForm } from './telegram.js';
+import { getBotInfo } from './helpers.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
 const CHAT_MODEL = 'openai/gpt-oss-20b';
@@ -237,7 +238,7 @@ export async function handlePikoVoice(msg,env){
 }
 
 export async function handlePikoAI(msg,env){
-  if(!msg.text||msg.chat.type!=='private'||msg.from?.is_bot)return false;
+  if(!msg.text||!['private','group','supergroup'].includes(msg.chat.type)||msg.from?.is_bot)return false;
   await ensureSchema(env);
   if(await banned(env,msg.from.id))return true;
   await profile(env,msg.from);
@@ -257,6 +258,26 @@ export async function handlePikoGroup(msg,env,cmd){
   if(cmd&&PIKO_COMMANDS.has(cmd.name)&&['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){await groupTools(env,msg,cmd);return true;}
   if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
   if(!cmd&&msg.text){
+    // In groups, answer only when a member explicitly mentions Piko or replies to Piko.
+    // This works with Telegram's default privacy mode and avoids replying to every message.
+    const botInfo=await getBotInfo(env);
+    const username=botInfo?.username||'';
+    const mentionPattern=username?new RegExp('(^|\\\\s)@'+username.replace(/[.*+?^$\\{\\}()|[\\]\\\\]/g,'\\\\  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
+  if(!cmd&&msg.text){
+    const chat=String(msg.chat.id),text=msg.text.toLowerCase();
+    const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
+    const match=f.rows.find(x=>x.keyword&&text.includes(x.keyword.toLowerCase()));
+    if(match)await reply(env,msg.chat.id,esc(match.response));
+  }
+  return false;')+'(?![A-Za-z0-9_])','i'):null;
+    const hasMention=!!(mentionPattern&&mentionPattern.test(msg.text));
+    const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
+    if(hasMention||repliedToPiko){
+      const prompt=msg.text.replace(mentionPattern||/$^/,'').trim();
+      const cleanMsg={...msg,text:prompt||'Please help me.'};
+      await handlePikoAI(cleanMsg,env);
+      return true;
+    }
     const chat=String(msg.chat.id),text=msg.text.toLowerCase();
     const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
     const match=f.rows.find(x=>x.keyword&&text.includes(x.keyword.toLowerCase()));
