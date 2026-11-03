@@ -85,7 +85,7 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
         : 'Choose a varied fun topic: anime, gaming, science, pop culture, internet culture, riddles or everyday knowledge.';
   const task = type === 'quiz' ? 'Write one fresh, EASY multiple-choice trivia question suitable for a casual group chat.'
     : type === 'riddle' ? 'Write one very easy, short, original riddle that most people can solve.'
-    : type === 'emoji' ? 'Create one very easy emoji guessing puzzle using familiar emojis and a common word, food, movie, or phrase.'
+    : type === 'emoji' ? 'Create one VERY EASY emoji guessing puzzle. Use exactly 2 or 3 familiar emojis that clearly and directly represent the answer. For a movie, use its iconic characters or objects (example format: Guess the movie: 🦁👑). Never use unrelated emojis, random animals, or misleading clues. Choose a widely known movie, food, animal, or everyday object. The correct option must be an obvious match.'
     : 'Choose one common, easy six-letter English word; do not use names or obscure words.';
   const avoid = Array.isArray(avoidQuestions) ? avoidQuestions.slice(-30).map(x => String(x).slice(0,180)) : [];
   const response = await fetch(GROQ_URL + '/chat/completions', {
@@ -97,8 +97,8 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
         { role: 'system', content: 'You create ORIGINAL, EASY, beginner-friendly group-game content. Never make a hard, tricky, obscure, academic, or confusing question. Output valid JSON only, no markdown.' },
         { role: 'user', content: task + ' Theme: ' + theme + ' Requested category: ' + mode + '. Create a different question from every item in this recent-used list. Do not reuse or paraphrase them: ' + JSON.stringify(avoid) + '. Keep wording short and answer choices simple and clearly distinct. ' + schema }
       ],
-      temperature: 1,
-      max_completion_tokens: 220,
+      temperature: 1.15,
+      max_completion_tokens: 320,
       reasoning_effort: 'low'
     })
   });
