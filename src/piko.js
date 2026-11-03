@@ -116,22 +116,24 @@ function findFunTarget(msg) {
 const FUN_MEDIA_COMMANDS=['hug','wave','highfive','cheer','kick','punch','slap'];
 async function sendFunMedia(env,chatId,name,replyTo){
   const items=await kvGet(env,'piko_media:'+name,true);
-  if(!Array.isArray(items)||!items.length)return false;
+  if(!Array.isArray(items)||!items.length||!Number.isInteger(replyTo)||replyTo<=0)return false;
   const item=items[rand(0,items.length-1)];
-  const payload={
+  const method=item.type==='animation'?'sendAnimation':'sendSticker';
+  const mediaField=item.type==='animation'?'animation':'sticker';
+  // Require Telegram to reply to the exact original message. Never send unthreaded media.
+  const result=await tg(env,method,{
     chat_id:chatId,
-    [item.type==='animation'?'animation':'sticker']:item.file_id
-  };
-  // Telegram Bot API's legacy reply_to_message_id works for both stickers
-  // and animations. replyTo is the original member message ID, not the command ID.
-  if(replyTo)payload.reply_to_message_id=replyTo;
-  const result=await tg(env,item.type==='animation'?'sendAnimation':'sendSticker',payload);
-  if(!result.ok){
-    console.error('Piko fun media send failed:',name,result.error_code,result.description);
+    [mediaField]:item.file_id,
+    reply_parameters:{message_id:replyTo,allow_sending_without_reply:false}
+  });
+  if(!result?.ok){
+    console.error('Piko fun media send failed:',{name,method,replyTo,error_code:result?.error_code,description:result?.description});
     return false;
   }
-  if(replyTo&&result.result?.reply_to_message?.message_id!==replyTo){
-    console.error('Piko fun media was not attached to target message:',{name,replyTo,sentReplyTo:result.result?.reply_to_message?.message_id});
+  const actualReplyId=result.result?.reply_to_message?.message_id;
+  if(actualReplyId!==replyTo){
+    console.error('Piko fun media reply verification failed:',{name,replyTo,actualReplyId});
+    return false;
   }
   return true;
 }
@@ -167,19 +169,17 @@ async function handleFunMediaSetup(env,msg,cmd){
   return true;
 }
 async function funCommand(env,msg,cmd){
-  const target=findFunTarget(msg);
-  if(['hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){
-    if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /'+cmd.name+' @username');
-    if(FUN_MEDIA_COMMANDS.includes(cmd.name)){
-      // When the command is a reply, attach the sticker/GIF directly to the
-      // original member's message, not to the command sender's message.
-      const targetMessageId=msg.reply_to_message?.message_id;
-      if(!targetMessageId)return reply(env,msg.chat.id,'Please reply directly to the member\'s message with /'+cmd.name+'.');
-      const sent=await sendFunMedia(env,msg.chat.id,cmd.name,targetMessageId);
-      if(!sent)return reply(env,msg.chat.id,'Telegram could not send that sticker as a reply. Check the bot permissions and saved media pack.');
-      return true;
+  if(FUN_MEDIA_COMMANDS.includes(cmd.name)){
+    // Only accept a direct reply; target the member's original message ID.
+    const original=msg.reply_to_message;
+    if(!original||!original.from||original.from.is_bot||original.from.id===msg.from.id){
+      return reply(env,msg.chat.id,'Reply directly to a group member\\'s message with /'+cmd.name+'.');
     }
+    const sent=await sendFunMedia(env,msg.chat.id,cmd.name,original.message_id);
+    if(!sent)return reply(env,msg.chat.id,'I could not attach the saved media to that message. Check the saved media pack and bot permissions.');
+    return true;
   }
+  const target=findFunTarget(msg);
   if(cmd.name==='ship'){
     if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /ship @username');
     const score=rand(0,100);
