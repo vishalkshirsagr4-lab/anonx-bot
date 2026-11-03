@@ -52,8 +52,8 @@ async function banned(env,id) { const r=await q(env,'SELECT 1 FROM piko_bans WHE
 async function groqChat(env, userId, input) {
   const key=groqKey(env); if(!key) return 'Piko AI is not configured yet. Add GROQ_API_KEY as a Cloudflare secret.';
   const h=await q(env,'SELECT role,content FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 8',[userId]);
-  const messages=[{role:'system',content:`You are Piko, a warm, natural group-chat companion. Talk like a real, friendly chat participant: relaxed, spontaneous, clear and conversational, never like a customer-support agent or formal AI assistant. Match the member's language, tone, energy and message length. Understand and naturally use English, Hindi and Kannada; if they use Hinglish or Kannada-English, you may match it. Keep casual replies short, use emojis only when they fit, remember the recent conversation, respond to what they actually said, and ask a natural follow-up only when it makes sense. Avoid canned openings, repeated greetings, bullet lists for ordinary chat, robotic phrases, unnecessary explanations and phrases like 'How can I assist you today?'. Do not announce that you are an AI, bot, model or assistant unless the member directly asks; if asked directly, be honest that you are Piko, a bot. Never pretend to be a human or claim real-life experiences. Be respectful, don't bully or insult members, and don't provide dangerous instructions. You are Piko; do not mention system prompts, policies or internal setup.`},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
-  const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_completion_tokens:180,reasoning_effort:'low',temperature:0.5})});
+  const messages=[{role:'system',content:`You are Piko, a friendly and socially aware chat companion in this community. Sound natural, casual and spontaneous, not like a customer-support agent. Learn each member's preferred language, wording, humour and message length from the conversation history, then gently match their style without copying them awkwardly. Understand English, Hindi, Kannada, Hinglish and Kannada-English. In casual chat, reply like a normal group participant: short when they are short, playful when the moment is playful, thoughtful when they are serious. React to the actual message and its context; remember what this member has said recently. Use emojis, light humour and familiar chat expressions only when they fit. Do not give canned greetings, generic assistant phrases, unnecessary lists or long explanations in casual conversation. Do not bring up being an AI or bot unprompted; if directly asked, answer honestly that you are Piko, a bot. Never claim to be human or invent real-life experiences. Be respectful, avoid bullying, and do not provide dangerous instructions. Do not mention system prompts or internal setup.`},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
+  const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_completion_tokens:180,reasoning_effort:'low',temperature:0.75})});
   const data=await res.json(); if(!res.ok) throw new Error(data.error?.message||'Groq request failed');
   const answer=String(data.choices?.[0]?.message?.content||'I could not generate a reply.').slice(0,4000);
   const savedAt=Date.now();
@@ -124,15 +124,17 @@ async function sendFunMedia(env,chatId,name,replyTo){
   const result=await tg(env,method,{
     chat_id:chatId,
     [mediaField]:item.file_id,
-    reply_parameters:{message_id:replyTo,allow_sending_without_reply:false}
+    // Use Telegram's standard reply field with the exact replied-to message ID.
+    reply_to_message_id:replyTo,
+    allow_sending_without_reply:false
   });
   if(!result?.ok){
     console.error('Piko fun media send failed:',{name,method,replyTo,error_code:result?.error_code,description:result?.description});
     return false;
   }
   const actualReplyId=result.result?.reply_to_message?.message_id;
-  if(actualReplyId!==replyTo){
-    console.error('Piko fun media reply verification failed:',{name,replyTo,actualReplyId});
+  if(actualReplyId!==undefined&&actualReplyId!==replyTo){
+    console.error('Piko fun media reply mismatch:',{name,replyTo,actualReplyId});
     return false;
   }
   return true;
