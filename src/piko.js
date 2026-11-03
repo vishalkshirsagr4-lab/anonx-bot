@@ -98,14 +98,6 @@ async function economy(env,msg,cmd) {
   }
 }
 
-const TRIVIA=[
- ['Capital of Japan?','Tokyo',['Beijing','Seoul','Tokyo','Bangkok']],
- ['Sides of a hexagon?','6',['5','6','7','8']],
- ['Red Planet?','Mars',['Venus','Mars','Jupiter','Saturn']],
- ['7 × 8 = ?','56',['48','54','56','63']],
- ['Gas plants absorb?','CO₂',['O₂','N₂','CO₂','H₂']],
- ['Largest ocean?','Pacific',['Atlantic','Pacific','Indian','Arctic']]
-];
 function findFunTarget(msg) {
   const replied=msg.reply_to_message?.from;
   if(replied&&!replied.is_bot&&replied.id!==msg.from.id)return replied;
@@ -121,7 +113,7 @@ function findFunTarget(msg) {
   if(raw)return {id:0,username:raw[1],first_name:'@'+raw[1]};
   return null;
 }
-const FUN_MEDIA_COMMANDS=['ship','roll','trivia','hug'];
+const FUN_MEDIA_COMMANDS=['hug'];
 async function sendFunMedia(env,chatId,name,replyTo){
   const items=await kvGet(env,'piko_media:'+name,true);
   if(!Array.isArray(items)||!items.length)return false;
@@ -176,19 +168,10 @@ async function funCommand(env,msg,cmd){
   if(cmd.name==='ship'){
     if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /ship @username');
     const score=rand(0,100);
-    await reply(env,msg.chat.id,`✨ <b>Friendship match</b>\n${mention(msg.from)} + ${mention(target)}\n<b>${score}%</b> ${'💚'.repeat(Math.floor(score/20))}`,{reply_to_message_id:msg.message_id});
-    return sendFunMedia(env,msg.chat.id,'ship',msg.message_id);
+    return reply(env,msg.chat.id,`💚 <b>Friendship percentage</b>\n${mention(msg.from)} + ${mention(target)}\n\n<b>${score}%</b> ${'💚'.repeat(Math.floor(score/20))}`,{reply_to_message_id:msg.message_id});
   }
   if(cmd.name==='roll'){
-    await reply(env,msg.chat.id,(target?mention(target)+' ':'')+'🎲 You rolled <b>'+rand(1,6)+'</b>.',{reply_to_message_id:msg.message_id});
-    return sendFunMedia(env,msg.chat.id,'roll',msg.message_id);
-  }
-  if(cmd.name==='trivia'){
-    const [question,answer,choices]=TRIVIA[rand(0,TRIVIA.length-1)],shuffled=[...choices].sort(()=>Math.random()-0.5);
-    const buttons=shuffled.map((v,i)=>[{text:(i+1)+'. '+v,callback_data:'piko_trivia_'+msg.from.id+'_'+(v===answer?'1':'0')}]);
-    await q(env,'INSERT OR REPLACE INTO kv_store(key,value,expires_at) VALUES(?,?,?)',['piko_trivia:'+msg.from.id,answer,Date.now()+60000]);
-    await reply(env,msg.chat.id,(target?mention(target)+' ':'')+'❓ <b>'+question+'</b>',{reply_markup:{inline_keyboard:buttons},reply_to_message_id:msg.message_id});
-    return sendFunMedia(env,msg.chat.id,'trivia',msg.message_id);
+    return tg(env,'sendDice',{chat_id:msg.chat.id,emoji:'🎲',reply_to_message_id:msg.message_id});
   }
 }
 async function imageCommand(env,msg,cmd){
@@ -281,7 +264,7 @@ async function adminCommand(env,msg,cmd){
   return true;
 }
 
-const PIKO_COMMANDS=new Set(['setship','setroll','settrivia','sethug','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['sethug','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -291,7 +274,7 @@ export async function handlePikoDM(msg,env,cmd){
     await profile(env,msg.from);
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
-    if(['ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
+    if(['ship','roll','hug','slap','punch','kick'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
     if(['admin','stats','addcredits','addcoins','gban','ungban'].includes(cmd.name)){await adminCommand(env,msg,cmd);return true;}
   }
   return false;
@@ -322,7 +305,7 @@ export async function handlePikoGroup(msg,env,cmd){
     return false;
   }
   if(cmd&&PIKO_COMMANDS.has(cmd.name)&&['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){await groupTools(env,msg,cmd);return true;}
-  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick','setship','setroll','settrivia','sethug'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
+  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','sethug'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
   if(!cmd&&msg.text){
     // Answer group AI only when Piko is mentioned or a member replies to Piko.
     const botInfo=await getBotInfo(env);
@@ -344,5 +327,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship, /roll, /trivia, /hug, /slap, /punch, /kick\nOwner media setup in DM: /setship, /setroll, /settrivia, /sethug (send multiple stickers/GIFs, then /cancel)\nGroup admins: /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /slap, /punch, /kick\nOwner media setup in DM: /sethug (send multiple stickers/GIFs, then /cancel)\nGroup admins: /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
 }
