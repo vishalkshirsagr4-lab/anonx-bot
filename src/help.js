@@ -28,8 +28,8 @@ export function getHelp() {
     },
     piko: {
       title: '🤖 Piko AI & Fun',
-      cmds: `<b>🤖 Piko Features</b>\\n\\nSend a DM to chat with Piko AI. Send a voice message for transcription.\\n/credits — Credits and coins\\n/img <code>prompt</code> — Generate an image (5 credits)\\n/daily, /work, /crime, /rob, /pay — Economy\\n/ship, /roll, /trivia, /hug, /slap, /punch, /kick — Fun commands\\nGroup admins: /welcome, /setwelcome, /delwelcome, /save, /stop, /filters, /ban, /unban\\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban`,
-      rules: `<b>Notes</b>\\n\\nAI and voice features require GROQ_API_KEY. Image generation costs 5 credits. Group moderation commands require admin permissions.`
+      cmds: `<b>🤖 Piko Features</b>\n\nSend a DM to chat with Piko AI. Send a voice message for transcription.\n/credits — Credits and coins\n/img <code>prompt</code> — Generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay — Economy\n/ship, /roll, /trivia, /hug, /slap, /punch, /kick — Fun commands\nGroup admins: /welcome, /setwelcome, /delwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban`,
+      rules: `<b>Notes</b>\n\nAI and voice features require GROQ_API_KEY. Image generation costs 5 credits. Group moderation commands require admin permissions.`
     },
     owner: {
       title: '👑 Owner',
@@ -48,6 +48,7 @@ export function helpMainView(userId, origin = 'help') {
     [{ text: H.contest.title, callback_data: `help_contest:${origin}` }],
     [{ text: H.wallet.title, callback_data: `help_wallet:${origin}` }],
     [{ text: H.setting.title, callback_data: `help_setting:${origin}` }],
+    [{ text: H.piko.title, callback_data: `help_piko:${origin}` }],
   ];
   if (isOwner(userId)) rows.push([{ text: H.owner.title, callback_data: `help_owner:${origin}` }]);
   rows.push([
