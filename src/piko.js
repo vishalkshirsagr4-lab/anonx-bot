@@ -214,9 +214,7 @@ function musicItems(payload) {
     const value = payload[key];
     if (Array.isArray(value)) return value;
     if (value && typeof value === 'object') {
-      for (const nested of ['results','songs','tracks','items']) {
-        if (Array.isArray(value[nested])) return value[nested];
-      }
+      for (const nested of ['results','songs','tracks','items']) if (Array.isArray(value[nested])) return value[nested];
     }
   }
   return payload.data && typeof payload.data === 'object' ? [payload.data] : [];
@@ -228,8 +226,7 @@ function musicField(item, keys) {
   }
   return '';
 }
-function officialMusicLink(item) {
-  const raw = musicField(item, ['official_url','listen_url','stream_url','web_url','url','link']);
+function safeMusicPlatformLink(raw) {
   if (!raw) return '';
   try {
     const parsed = new URL(raw);
@@ -238,69 +235,62 @@ function officialMusicLink(item) {
     return parsed.href;
   } catch { return ''; }
 }
+function musicLinks(item) {
+  const audio = safeMusicPlatformLink(musicField(item, ['official_audio_url','audio_page','listen_url','spotify_url','jiosaavn_url','music_url','official_url']));
+  const video = safeMusicPlatformLink(musicField(item, ['official_video_url','video_page','youtube_url','video_link','official_video']));
+  const general = safeMusicPlatformLink(musicField(item, ['web_url','url','link']));
+  return { audio: audio || general, video: video || general };
+}
 async function musicSearchCommand(env, msg, cmd) {
   const query = String(cmd.arg || '').trim().slice(0, 120);
-  if (!query) {
-    return reply(env, msg.chat.id, '🎵 <b>Piko Music Search</b>\n\nUsage:\n<code>/search song name</code>\n<code>/music song name</code>\n<code>/play song name</code>\n\nI show song details and official listening links when available.');
-  }
+  if (!query) return reply(env, msg.chat.id, '🎵 <b>Piko Music</b>\n\n/search song name — search results\n/play song name — official audio link\n/song song name — same as /play\n/video song name — official video link\n/music song name — show audio and video choices');
   const apiKey = String(env?.NAZRIYA_API_KEY || '').trim();
-  if (!apiKey) {
-    return reply(env, msg.chat.id, '⚙️ Music search is not configured yet. Add <code>NAZRIYA_API_KEY</code> as a Cloudflare Worker secret, then redeploy.');
-  }
+  if (!apiKey) return reply(env, msg.chat.id, '⚙️ Music search is not configured. Add <code>NAZRIYA_API_KEY</code> as a Cloudflare Worker secret.');
   const status = await reply(env, msg.chat.id, '🔎 Searching music…');
+  if (!status?.ok || !status.result?.message_id) return true;
   try {
     const url = new URL(NAZRIYA_SEARCH_URL);
     url.searchParams.set('q', query);
     url.searchParams.set('key', apiKey);
-    const response = await fetch(url.toString(), {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(10000)
-    });
+    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
     const payload = await response.json();
-    if (!response.ok || payload?.status === 'error' || payload?.success === false) {
-      throw new Error(String(payload?.message || 'Music provider request failed').slice(0, 180));
-    }
+    if (!response.ok || payload?.status === 'error' || payload?.success === false) throw new Error('Music provider request failed');
     const items = musicItems(payload).slice(0, 5);
     if (!items.length) {
-      await tg(env, 'editMessageText', {
-        chat_id: msg.chat.id, message_id: status.result.message_id,
-        text: '🔎 No matching song details were returned. Try another title or artist.'
-      });
+      await tg(env, 'editMessageText', { chat_id: msg.chat.id, message_id: status.result.message_id, text: '🔎 No matching results. Try another song title or artist.' });
       return true;
     }
     const lines = items.map((item, index) => {
       const title = musicField(item, ['title','name','song','track']) || 'Unknown title';
       const artist = musicField(item, ['artist','artists','singer','subtitle','author']) || 'Artist not listed';
       const album = musicField(item, ['album','album_name']);
-      const link = officialMusicLink(item);
-      const details = [
-        (index + 1) + '. <b>' + esc(title.slice(0, 160)) + '</b>',
-        '   👤 ' + esc(artist.slice(0, 120)),
-        album ? '   💿 ' + esc(album.slice(0, 100)) : '',
-        link ? '   🔗 <a href="' + esc(link) + '">Official listening link</a>' : ''
-      ].filter(Boolean);
-      return details.join('\n');
+      const links = musicLinks(item);
+      const parts = [(index + 1) + '. <b>' + esc(title.slice(0, 140)) + '</b>', '   👤 ' + esc(artist.slice(0, 100))];
+      if (album) parts.push('   💿 ' + esc(album.slice(0, 90)));
+      if (cmd.name === 'video') {
+        if (links.video) parts.push('   🎬 <a href="' + esc(links.video) + '">Official video</a>');
+      } else if (cmd.name === 'play' || cmd.name === 'song') {
+        if (links.audio) parts.push('   🎧 <a href="' + esc(links.audio) + '">Official audio / listen</a>');
+      } else if (cmd.name === 'music') {
+        if (links.audio) parts.push('   🎧 <a href="' + esc(links.audio) + '">Audio choice</a>');
+        if (links.video) parts.push('   🎬 <a href="' + esc(links.video) + '">Video choice</a>');
+      } else {
+        if (links.audio) parts.push('   🎧 <a href="' + esc(links.audio) + '">Audio</a>');
+        if (links.video) parts.push('   🎬 <a href="' + esc(links.video) + '">Video</a>');
+      }
+      return parts.join('\n');
     });
-    const heading = cmd.name === 'play'
-      ? '🎧 <b>Official listening options</b>'
-      : '🎵 <b>Music search results</b>';
-    const note = cmd.name === 'play'
-      ? '\n\nChoose an official listening link above. If none is shown, the provider did not return a supported official link.'
-      : '\n\nUse /play ' + esc(query) + ' to view official listening options.';
-    await tg(env, 'editMessageText', {
-      chat_id: msg.chat.id,
-      message_id: status.result.message_id,
-      text: heading + '\n\n' + lines.join('\n\n') + note,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true
-    });
+    const heading = cmd.name === 'video' ? '🎬 <b>Official video options</b>'
+      : (cmd.name === 'play' || cmd.name === 'song') ? '🎧 <b>Official audio options</b>'
+      : cmd.name === 'music' ? '🎵 <b>Choose audio or video</b>'
+      : '🔎 <b>Matching music results</b>';
+    const text = heading + '\n\n' + lines.join('\n\n') +
+      (cmd.name === 'search' ? '\n\nUse /music ' + esc(query) + ' for audio and video choices.' : '') +
+      '\n\nPiko shares supported official platform links; it does not download media.';
+    await tg(env, 'editMessageText', { chat_id: msg.chat.id, message_id: status.result.message_id, text, parse_mode: 'HTML', disable_web_page_preview: true });
   } catch (error) {
-    console.error('Piko music search failed:', String(error?.message || error).slice(0, 220));
-    await tg(env, 'editMessageText', {
-      chat_id: msg.chat.id,
-      message_id: status.result.message_id,
-      text: '⚠️ Music search is temporarily unavailable. Please try again later.'
-    });
+    console.error('Piko music search failed:', String(error?.message || error).slice(0, 180));
+    await tg(env, 'editMessageText', { chat_id: msg.chat.id, message_id: status.result.message_id, text: '⚠️ Music search is temporarily unavailable. Please try again later.' });
   }
   return true;
 }
@@ -570,7 +560,7 @@ async function adminCommand(env,msg,cmd){
   return true;
 }
 
-const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','song','video','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -578,7 +568,8 @@ export async function handlePikoDM(msg,env,cmd){
   if(await banned(env,msg.from.id))return true;
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     await profile(env,msg.from);
-    if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}\n    if(['search','music','play'].includes(cmd.name)){await musicSearchCommand(env,msg,cmd);return true;}
+    if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
+    if(['search','music','play','song','video'].includes(cmd.name)){await musicSearchCommand(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
     if(['ship','roll','hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
@@ -674,5 +665,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /music song, /play song (official listening links only)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
 }
