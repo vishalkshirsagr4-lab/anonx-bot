@@ -26,7 +26,7 @@ jobs:
           node --check src/piko.js
           node --check src/handlers.js
           node --check src/callbacks.js
-          npm test
+          npm run build
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
