@@ -75,7 +75,8 @@ export async function handleCallback(cq, env) {
           [{ text: H.ask.title, callback_data: `help_ask:${origin}` }],
           [{ text: H.contest.title, callback_data: `help_contest:${origin}` }],
           [{ text: H.wallet.title, callback_data: `help_wallet:${origin}` }],
-          [{ text: H.setting.title, callback_data: `help_setting:${origin}` }]
+          [{ text: H.setting.title, callback_data: `help_setting:${origin}` }],
+          [{ text: H.piko.title, callback_data: `help_piko:${origin}` }]
         ];
 
         if (isOwner(userId)) {
