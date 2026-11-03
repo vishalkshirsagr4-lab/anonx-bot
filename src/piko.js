@@ -125,6 +125,18 @@ async function whisperCommand(env,msg,cmd) {
     return;
   }
 
+  // The command text contains the secret, so remove it from the group before delivery.
+  // Fail closed: never send the whisper if Telegram cannot delete the public command.
+  const removed = await tg(env, 'deleteMessage', {
+    chat_id: msg.chat.id,
+    message_id: msg.message_id
+  });
+  if (!removed?.ok) {
+    console.error('Piko whisper could not delete public command:', removed?.description || 'Unknown Telegram error');
+    await reply(env, msg.chat.id, '🔒 For privacy, I did not send this whisper because I could not remove your command from the group. Please make Piko a group admin with the <b>Delete messages</b> permission, then try again.');
+    return;
+  }
+
   let target = msg.reply_to_message?.from || null;
   let message = String(cmd.arg || '').trim();
 
