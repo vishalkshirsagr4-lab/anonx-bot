@@ -113,7 +113,7 @@ function findFunTarget(msg) {
   if(raw)return {id:0,username:raw[1],first_name:'@'+raw[1]};
   return null;
 }
-const FUN_MEDIA_COMMANDS=['hug','wave','highfive','cheer'];
+const FUN_MEDIA_COMMANDS=['hug','wave','highfive','cheer','kick','punch','slap'];
 async function sendFunMedia(env,chatId,name,replyTo){
   const items=await kvGet(env,'piko_media:'+name,true);
   if(!Array.isArray(items)||!items.length)return false;
@@ -162,8 +162,7 @@ async function funCommand(env,msg,cmd){
     if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /'+cmd.name+' @username');
     const verbs={hug:'sends a friendly hug to',slap:'sends a playful cartoon reaction to',punch:'sends a silly cartoon reaction to',kick:'sends a silly cartoon reaction to',wave:'waves to',highfive:'gives a high-five to',cheer:'cheers for'};
     await reply(env,msg.chat.id,'✨ '+mention(msg.from)+' '+verbs[cmd.name]+' '+mention(target)+'!',{reply_to_message_id:msg.message_id});
-    if(['slap','punch','kick'].includes(cmd.name))return true;
-    if(['hug','wave','highfive','cheer'].includes(cmd.name))return sendFunMedia(env,msg.chat.id,cmd.name,msg.message_id);
+    if(FUN_MEDIA_COMMANDS.includes(cmd.name))return sendFunMedia(env,msg.chat.id,cmd.name,msg.message_id);
   }
   if(cmd.name==='ship'){
     if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /ship @username');
@@ -264,7 +263,7 @@ async function adminCommand(env,msg,cmd){
   return true;
 }
 
-const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -305,7 +304,7 @@ export async function handlePikoGroup(msg,env,cmd){
     return false;
   }
   if(cmd&&PIKO_COMMANDS.has(cmd.name)&&['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){await groupTools(env,msg,cmd);return true;}
-  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','sethug','setwave','sethighfive','setcheer'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
+  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
   if(!cmd&&msg.text){
     // Answer group AI only when Piko is mentioned or a member replies to Piko.
     const botInfo=await getBotInfo(env);
@@ -327,5 +326,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick are text-only reactions\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer (send multiple stickers/GIFs, then /cancel)\nGroup admins: /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup admins: /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
 }
