@@ -194,7 +194,7 @@ async function handleDM(msg, env, ctx) {
           });
         }
         const spec = await welcomeSpec(env, msg.from);
-        const startTxt = `Hello ${userLink(msg.from.id, msg.from.first_name)} 👋\n\nI am <b>${esc(state.BOT_NAME)}</b> — the <b>Anonymous Q&amp;A Bot</b>. Post and reply anonymously, join daily contests. Claim free coins with /claim.\n\nSelect an option below:`;
+        const startTxt = `Hello ${userLink(msg.from.id, msg.from.first_name)} 👋\n\nI am <b>${esc(state.BOT_NAME)}</b> — your AI and community bot. Chat with Piko, use group tools, post anonymously and join contests.\n\nSelect an option below:`;
         const markup = { inline_keyboard: [
           [{ text: '❓ Help & Commands', callback_data: 'help_main_start' }],
           [{ text: '👨‍💻 Developer', url: `tg://user?id=${state.OWNER_ID}` }, { text: '🆘 Support', url: state.SUPPORT_GROUP }]
