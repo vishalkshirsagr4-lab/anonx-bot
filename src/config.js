@@ -15,7 +15,7 @@ export const state = {
   OWNER_ID: 8750122483,
   OWNER_IDS: [8750122483],
   SUPPORT_GROUP: 'https://t.me/+lOxdvQHVCSdhZWU9',
-  BOT_NAME: 'AnonX',
+  BOT_NAME: 'Piko',
 
   DELDB_PASSWORD: '8660',
 
