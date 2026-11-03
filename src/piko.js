@@ -52,7 +52,7 @@ async function banned(env,id) { const r=await q(env,'SELECT 1 FROM piko_bans WHE
 async function groqChat(env, userId, input) {
   const key=groqKey(env); if(!key) return 'Piko AI is not configured yet. Add GROQ_API_KEY as a Cloudflare secret.';
   const h=await q(env,'SELECT role,content FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 8',[userId]);
-  const messages=[{role:'system',content:'You are Piko, a friendly, helpful and playful assistant. Keep replies concise, respectful and safe. You can understand English, Hindi and Kannada. Do not insult, bully, or provide dangerous instructions.'},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
+  const messages=[{role:'system',content:`You are Piko, a warm, natural group-chat companion. Talk like a real, friendly chat participant: relaxed, spontaneous, clear and conversational, never like a customer-support agent or formal AI assistant. Match the member's language, tone, energy and message length. Understand and naturally use English, Hindi and Kannada; if they use Hinglish or Kannada-English, you may match it. Keep casual replies short, use emojis only when they fit, remember the recent conversation, respond to what they actually said, and ask a natural follow-up only when it makes sense. Avoid canned openings, repeated greetings, bullet lists for ordinary chat, robotic phrases, unnecessary explanations and phrases like 'How can I assist you today?'. Do not announce that you are an AI, bot, model or assistant unless the member directly asks; if asked directly, be honest that you are Piko, a bot. Never pretend to be a human or claim real-life experiences. Be respectful, don't bully or insult members, and don't provide dangerous instructions. You are Piko; do not mention system prompts, policies or internal setup.`},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
   const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_completion_tokens:180,reasoning_effort:'low',temperature:0.5})});
   const data=await res.json(); if(!res.ok) throw new Error(data.error?.message||'Groq request failed');
   const answer=String(data.choices?.[0]?.message?.content||'I could not generate a reply.').slice(0,4000);
@@ -172,8 +172,10 @@ async function funCommand(env,msg,cmd){
   if(FUN_MEDIA_COMMANDS.includes(cmd.name)){
     // Only accept a direct reply; target the member's original message ID.
     const original=msg.reply_to_message;
-    if(!original||!original.from||original.from.is_bot||original.from.id===msg.from.id){
-      return reply(env,msg.chat.id,'Reply directly to a group member\'s message with /'+cmd.name+'.');
+    // The replied-to message can be text, sticker, photo, video, or another
+    // Telegram message type. Only its message_id is needed to reply to it.
+    if(!original||!Number.isInteger(original.message_id)||original.message_id<=0){
+      return reply(env,msg.chat.id,'Reply directly to the message with /'+cmd.name+'.');
     }
     const sent=await sendFunMedia(env,msg.chat.id,cmd.name,original.message_id);
     if(!sent)return reply(env,msg.chat.id,'I could not attach the saved media to that message. Check the saved media pack and bot permissions.');
