@@ -6,27 +6,7 @@ import { tg } from './telegram.js';
 import { esc } from './helpers.js';
 import { generateGameContent } from './piko.js';
 
-const BANK = {
-  quiz: [
-    { q: 'Which planet is known as the Red Planet?', a: ['Venus','Mars','Jupiter','Mercury'], c: 1 },
-    { q: 'How many sides does a hexagon have?', a: ['5','6','7','8'], c: 1 },
-    { q: 'Which language runs natively in web browsers?', a: ['Python','Java','JavaScript','C'], c: 2 },
-    { q: 'What is the largest ocean on Earth?', a: ['Atlantic','Indian','Arctic','Pacific'], c: 3 },
-    { q: 'What does CPU stand for?', a: ['Central Processing Unit','Computer Power Utility','Core Program Unit','Central Print Unit'], c: 0 }
-  ],
-  riddle: [
-    { q: 'I have keys but no locks, and space but no room. What am I?', a: ['A map','A keyboard','A house','A clock'], c: 1 },
-    { q: 'What gets wetter as it dries?', a: ['A towel','The sun','A sponge','A cloud'], c: 0 },
-    { q: 'What has a face and two hands but no arms or legs?', a: ['A robot','A clock','A doll','A statue'], c: 1 },
-    { q: 'What has one eye but cannot see?', a: ['A needle','A storm','A potato','A camera'], c: 0 }
-  ],
-  emoji: [
-    { q: 'Guess the phrase: 🐝 + 🍃', a: ['Believe','Bee leaf','Be happy','Blue leaf'], c: 0 },
-    { q: 'Guess the movie type: 🦁👑', a: ['Space adventure','The Lion King','Ocean story','Car racing'], c: 1 },
-    { q: 'Guess the food: 🍎🥧', a: ['Apple pie','Fruit salad','Apple juice','Bread'], c: 0 },
-    { q: 'Guess the phrase: 🌧️🐱🐶', a: ['Heavy rain','Raining cats and dogs','Pet shop','Storm warning'], c: 1 }
-  ]
-};
+// No hardcoded question bank: choice games must use fresh Groq content.
 
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const key = (chatId) => 'game:active:' + chatId;
@@ -51,11 +31,30 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
   if (old && old.expires > Date.now() && !old.winner && old.status !== 'done') {
     return send(env, chatId, '🎮 A game is already running here. Finish it first or wait for it to expire.');
   }
-  let item = pick(BANK[type]);
-  try {
-    const fresh = await generateGameContent(env, type, topic);
-    if (fresh && typeof fresh.q === 'string' && Array.isArray(fresh.a) && fresh.a.length === 4 && Number.isInteger(fresh.c) && fresh.c >= 0 && fresh.c < 4) item = fresh;
-  } catch (error) { console.error('Groq game generation failed:', error?.message || String(error)); }
+  const recentKey = 'game:recent:' + chatId + ':' + type;
+  const recent = await kvGet(env, recentKey, true);
+  const used = Array.isArray(recent) ? recent : [];
+  let item = null;
+  // Ask Groq again if it returns a recently-used question.
+  for (let attempt = 0; attempt < 3 && !item; attempt++) {
+    try {
+      const fresh = await generateGameContent(env, type, topic, used);
+      if (!fresh || typeof fresh.q !== 'string' || !Array.isArray(fresh.a) || fresh.a.length !== 4 ||
+          !Number.isInteger(fresh.c) || fresh.c < 0 || fresh.c > 3 ||
+          fresh.a.some(x => typeof x !== 'string' || !x.trim())) continue;
+      const normalized = fresh.q.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const duplicate = used.some(q => String(q).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() === normalized);
+      if (!duplicate) item = fresh;
+    } catch (error) {
+      console.error('Groq game generation failed:', error?.message || String(error));
+      break;
+    }
+  }
+  if (!item) {
+    return send(env, chatId, '⚠️ I could not create a fresh question right now. Please try again in a moment.');
+  }
+  const nextRecent = [...used, item.q].slice(-30);
+  await kvPut(env, recentKey, nextRecent, 2592000);
   const id = Date.now().toString(36);
   const session = { id, type, topic: topic.slice(0,50), answer: item.c, question: item.q, choices: item.a, expires: Date.now() + 120000, winner: false };
   await kvPut(env, key(chatId), session, 120);
