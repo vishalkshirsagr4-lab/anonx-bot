@@ -160,9 +160,14 @@ async function funCommand(env,msg,cmd){
   const target=findFunTarget(msg);
   if(['hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){
     if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /'+cmd.name+' @username');
-    const verbs={hug:'sends a friendly hug to',slap:'sends a playful cartoon reaction to',punch:'sends a silly cartoon reaction to',kick:'sends a silly cartoon reaction to',wave:'waves to',highfive:'gives a high-five to',cheer:'cheers for'};
-    await reply(env,msg.chat.id,'✨ '+mention(msg.from)+' '+verbs[cmd.name]+' '+mention(target)+'!',{reply_to_message_id:msg.message_id});
-    if(FUN_MEDIA_COMMANDS.includes(cmd.name))return sendFunMedia(env,msg.chat.id,cmd.name,msg.message_id);
+    if(FUN_MEDIA_COMMANDS.includes(cmd.name)){
+      // When the command is a reply, attach the sticker/GIF directly to the
+      // original member's message, not to the command sender's message.
+      const targetMessageId=msg.reply_to_message?.message_id;
+      const sent=await sendFunMedia(env,msg.chat.id,cmd.name,targetMessageId);
+      if(!sent)return reply(env,msg.chat.id,'No media saved for /'+cmd.name+' yet. Ask the bot owner to configure /set'+cmd.name+'.');
+      return true;
+    }
   }
   if(cmd.name==='ship'){
     if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /ship @username');
