@@ -118,12 +118,22 @@ async function sendFunMedia(env,chatId,name,replyTo){
   const items=await kvGet(env,'piko_media:'+name,true);
   if(!Array.isArray(items)||!items.length)return false;
   const item=items[rand(0,items.length-1)];
-  const result=await tg(env,item.type==='animation'?'sendAnimation':'sendSticker',{
-    chat_id:chatId,[item.type==='animation'?'animation':'sticker']:item.file_id,
-    ...(replyTo?{reply_parameters:{message_id:replyTo,allow_sending_without_reply:true}}:{})
-  });
-  if(!result.ok)console.error('Piko fun media send failed:',name,result.description);
-  return !!result.ok;
+  const payload={
+    chat_id:chatId,
+    [item.type==='animation'?'animation':'sticker']:item.file_id
+  };
+  // Do not allow Telegram to silently drop the reply relationship.
+  // If replyTo is supplied, Telegram must attach this media to that message.
+  if(replyTo)payload.reply_parameters={message_id:replyTo};
+  const result=await tg(env,item.type==='animation'?'sendAnimation':'sendSticker',payload);
+  if(!result.ok){
+    console.error('Piko fun media send failed:',name,result.error_code,result.description);
+    return false;
+  }
+  if(replyTo&&result.result?.reply_to_message?.message_id!==replyTo){
+    console.error('Piko fun media was not attached to target message:',{name,replyTo,sentReplyTo:result.result?.reply_to_message?.message_id});
+  }
+  return true;
 }
 async function setFunMedia(env,msg,cmd){
   if(!isOwner(msg.from.id)){await reply(env,msg.chat.id,'⛔ Owner only.');return true;}
@@ -164,8 +174,9 @@ async function funCommand(env,msg,cmd){
       // When the command is a reply, attach the sticker/GIF directly to the
       // original member's message, not to the command sender's message.
       const targetMessageId=msg.reply_to_message?.message_id;
+      if(!targetMessageId)return reply(env,msg.chat.id,'Please reply directly to the member\'s message with /'+cmd.name+'.');
       const sent=await sendFunMedia(env,msg.chat.id,cmd.name,targetMessageId);
-      if(!sent)return reply(env,msg.chat.id,'No media saved for /'+cmd.name+' yet. Ask the bot owner to configure /set'+cmd.name+'.');
+      if(!sent)return reply(env,msg.chat.id,'Telegram could not send that sticker as a reply. Check the bot permissions and saved media pack.');
       return true;
     }
   }
