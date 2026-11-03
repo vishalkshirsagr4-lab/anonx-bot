@@ -64,6 +64,54 @@ async function groqChat(env, userId, input) {
   ]);
   return answer;
 }
+
+/**
+ * Generate fresh game content with Groq. Game state, answer validation,
+ * rewards and expiry remain local and deterministic.
+ */
+export async function generateGameContent(env, type, topic = 'mixed') {
+  const key = groqKey(env);
+  if (!key) return null;
+  const mode = String(topic || 'mixed').slice(0, 60);
+  const schema = type === 'word'
+    ? 'Return JSON only: {"word":"exactly six lowercase English letters"}.'
+    : 'Return JSON only: {"q":"short question or puzzle","a":["four distinct short options"],"c":0}. c is the zero-based index of the one correct option.';
+  const theme = mode.toLowerCase().includes('anime')
+    ? 'Use popular anime themes and well-known characters, but create original questions. Avoid quoting dialogue or reproducing copyrighted text.'
+    : mode.toLowerCase().includes('trend') || mode.toLowerCase().includes('genz')
+      ? 'Use current internet-culture, gaming, meme and Gen-Z-friendly themes. Keep it kind and age-appropriate.'
+      : mode.toLowerCase().includes('famous')
+        ? 'Use famous movies, games, anime, sports and pop-culture trivia.'
+        : 'Choose a varied fun topic: anime, gaming, science, pop culture, internet culture, riddles or everyday knowledge.';
+  const task = type === 'quiz' ? 'Write one fresh multiple-choice trivia question.'
+    : type === 'riddle' ? 'Write one original, solvable short riddle with four plausible options.'
+    : type === 'emoji' ? 'Create one emoji rebus / phrase guessing challenge with four plausible options.'
+    : 'Choose one common, valid six-letter English word; do not use names or obscure words.';
+  const response = await fetch(GROQ_URL + '/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: env?.GROQ_CHAT_MODEL || CHAT_MODEL,
+      messages: [
+        { role: 'system', content: 'You create original, fun, safe group-game content. Output valid JSON only, no markdown.' },
+        { role: 'user', content: task + ' Theme: ' + theme + ' Requested category: ' + mode + '. Make it fresh and not a common repeated example. ' + schema }
+      ],
+      temperature: 1,
+      max_completion_tokens: 220,
+      reasoning_effort: 'low'
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'Groq game generation failed');
+  const raw = String(data.choices?.[0]?.message?.content || '').replace(/^`{3}(?:json)?/i, '').replace(/`{3}$/,'').trim();
+  const parsed = JSON.parse(raw);
+  if (type === 'word') return /^[a-z]{6}$/i.test(parsed.word || '') ? { word: parsed.word } : null;
+  if (typeof parsed.q !== 'string' || !Array.isArray(parsed.a) || parsed.a.length !== 4 ||
+      !Number.isInteger(parsed.c) || parsed.c < 0 || parsed.c > 3 ||
+      parsed.a.some(x => typeof x !== 'string' || !x.trim())) return null;
+  return { q: parsed.q.slice(0, 350), a: parsed.a.map(x => x.slice(0, 80)), c: parsed.c };
+}
+
 function remaining(last, hours) { if(!last)return 0; return Math.max(0,hours*3600000-(Date.now()-last)); }
 function duration(ms) { const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000); return h? h+'h '+m+'m':m+'m'; }
 
