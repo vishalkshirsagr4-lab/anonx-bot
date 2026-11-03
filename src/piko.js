@@ -129,9 +129,9 @@ async function whisperCommand(env,msg,cmd) {
   let message = String(cmd.arg || '').trim();
 
   if (!target) {
-    const match = message.match(/^@([A-Za-z0-9_]{5,32})\\s+([\\s\\S]+)$/);
+    const match = message.match(/^@([A-Za-z0-9_]{5,32})\s+([\s\S]+)$/);
     if (!match) {
-      await reply(env, msg.chat.id, 'Usage: <code>/whisper @username your private message</code>\\nOr reply to a member: <code>/whisper your private message</code>');
+      await reply(env, msg.chat.id, 'Usage: <code>/whisper @username your private message</code>\nOr reply to a member: <code>/whisper your private message</code>');
       return;
     }
     const username = match[1].toLowerCase();
@@ -170,7 +170,7 @@ async function whisperCommand(env,msg,cmd) {
   }
 
   const senderName = esc(msg.from.first_name || 'A group member');
-  const privateText = '🔐 <b>A whisper message to you.</b>\\nFrom: ' + senderName + '\\n\\n' + esc(message);
+  const privateText = '🔐 <b>A whisper message to you.</b>\nFrom: ' + senderName + '\n\n' + esc(message);
   const sent = await tg(env, 'sendMessage', {
     chat_id: Number(target.id),
     text: privateText,
@@ -184,7 +184,7 @@ async function whisperCommand(env,msg,cmd) {
     return;
   }
 
-  await reply(env, msg.chat.id, '🔐 A whisper message to ' + mention(target) + '.\\nOnly they can read the message.');
+  await reply(env, msg.chat.id, '🔐 A whisper message to ' + mention(target) + '.\nOnly they can read the message.');
 }
 
 async function economy(env,msg,cmd) {
