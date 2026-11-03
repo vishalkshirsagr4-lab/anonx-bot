@@ -114,7 +114,7 @@ async function funCommand(env,msg,cmd){
   if(cmd.name==='roll') return reply(env,msg.chat.id,'🎲 You rolled <b>'+rand(1,6)+'</b>.');
   if(cmd.name==='trivia'){
     const [question,answer,choices]=TRIVIA[rand(0,TRIVIA.length-1)],shuffled=[...choices].sort(()=>Math.random()-0.5);
-    const buttons=shuffled.map((v,i)=>[{text:(i+1)+'. '+v,callback_data:'piko_trivia_'+(v===answer?'1':'0')}]);
+    const buttons=shuffled.map((v,i)=>[{text:(i+1)+'. '+v,callback_data:'piko_trivia_'+msg.from.id+'_'+(v===answer?'1':'0')}]);
     await q(env,'INSERT OR REPLACE INTO kv_store(key,value,expires_at) VALUES(?,?,?)',['piko_trivia:'+msg.from.id,answer,Date.now()+60000]);
     return reply(env,msg.chat.id,'❓ <b>'+question+'</b>',{reply_markup:{inline_keyboard:buttons}});
   }
@@ -249,6 +249,7 @@ export async function handlePikoGroup(msg,env,cmd){
     return false;
   }
   if(cmd&&PIKO_COMMANDS.has(cmd.name)&&['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){await groupTools(env,msg,cmd);return true;}
+  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
   if(!cmd&&msg.text){
     const chat=String(msg.chat.id),text=msg.text.toLowerCase();
     const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
