@@ -326,113 +326,27 @@ export async function handlePikoGroup(msg,env,cmd){
   if(cmd&&PIKO_COMMANDS.has(cmd.name)&&['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){await groupTools(env,msg,cmd);return true;}
   if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
   if(!cmd&&msg.text){
-    // Support all Telegram group trigger styles: @username, plain bot name,
-    // and a direct reply to one of this bot's messages.
+    // Trigger AI for @username, the configured display name, or replies to Piko.
     const botInfo=await getBotInfo(env);
-    const username=String(botInfo?.username||'').trim();
-    const botName=String(state.BOT_NAME||'Piko').trim();
+    const username=String(botInfo?.username||'').trim().toLowerCase();
+    const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
     const text=String(msg.text);
     const lowerText=text.toLowerCase();
     const entities=Array.isArray(msg.entities)?msg.entities:[];
-    const usernameMention=!!username&&(
-      entities.some(entity=>{
-        if(entity.type!=='mention')return false;
-        const value=text.slice(entity.offset,entity.offset+entity.length);
-        return value.toLowerCase()==='@'+username.toLowerCase();
-      })||
-      new RegExp('(^|[^a-z0-9_])@'+username.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\  if(!cmd&&msg.text){
-    // Answer group AI only when Piko is mentioned or a member replies to Piko.
-    const botInfo=await getBotInfo(env);
-    const username=String(botInfo?.username||'').toLowerCase();
-    const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
-    const lowerText=msg.text.toLowerCase();
-    const words=lowerText.split(/[^a-z0-9_]+/);
-    const usernameMention=!!username&&lowerText.includes('@'+username);
-    const nameMention=!!botName&&words.includes(botName);
-    const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
-    if(usernameMention||nameMention||repliedToPiko){
-      const prompt=msg.text.split('@'+username).join(' ').split(botName).join(' ').trim();
-      await handlePikoAI({...msg,text:prompt||'Someone called your name. Reply naturally.'},env);
-      return true;
-    }
-    const chat=String(msg.chat.id),text=msg.text.toLowerCase();
-    const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
-    const match=f.rows.find(x=>x.keyword&&text.includes(x.keyword.toLowerCase()));
-    if(match)await reply(env,msg.chat.id,esc(match.response));
-  }')+'(?=$|[^a-z0-9_])','i').test(text)
-    );
-    const namePattern=botName?new RegExp('(^|[^\\p{L}\\p{N}_])'+botName.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\  if(!cmd&&msg.text){
-    // Answer group AI only when Piko is mentioned or a member replies to Piko.
-    const botInfo=await getBotInfo(env);
-    const username=String(botInfo?.username||'').toLowerCase();
-    const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
-    const lowerText=msg.text.toLowerCase();
-    const words=lowerText.split(/[^a-z0-9_]+/);
-    const usernameMention=!!username&&lowerText.includes('@'+username);
-    const nameMention=!!botName&&words.includes(botName);
-    const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
-    if(usernameMention||nameMention||repliedToPiko){
-      const prompt=msg.text.split('@'+username).join(' ').split(botName).join(' ').trim();
-      await handlePikoAI({...msg,text:prompt||'Someone called your name. Reply naturally.'},env);
-      return true;
-    }
-    const chat=String(msg.chat.id),text=msg.text.toLowerCase();
-    const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
-    const match=f.rows.find(x=>x.keyword&&text.includes(x.keyword.toLowerCase()));
-    if(match)await reply(env,msg.chat.id,esc(match.response));
-  }')+'(?=$|[^\\p{L}\\p{N}_])','iu'):null;
-    const nameMention=!!namePattern&&namePattern.test(text);
+    const usernameMention=!!username&&entities.some(entity=>{
+      if(entity.type!=='mention')return false;
+      return text.slice(entity.offset,entity.offset+entity.length).toLowerCase()==='@'+username;
+    });
+    const nameMention=!!botName&&lowerText.split(/[^\\p{L}\\p{N}_]+/u).includes(botName);
     const replied=msg.reply_to_message?.from;
     const repliedToPiko=!!(replied?.is_bot&&botInfo?.id&&Number(replied.id)===Number(botInfo.id));
     if(usernameMention||nameMention||repliedToPiko){
-      let prompt=text;
-      if(username)prompt=prompt.replace(new RegExp('@'+username.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\  if(!cmd&&msg.text){
-    // Answer group AI only when Piko is mentioned or a member replies to Piko.
-    const botInfo=await getBotInfo(env);
-    const username=String(botInfo?.username||'').toLowerCase();
-    const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
-    const lowerText=msg.text.toLowerCase();
-    const words=lowerText.split(/[^a-z0-9_]+/);
-    const usernameMention=!!username&&lowerText.includes('@'+username);
-    const nameMention=!!botName&&words.includes(botName);
-    const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
-    if(usernameMention||nameMention||repliedToPiko){
-      const prompt=msg.text.split('@'+username).join(' ').split(botName).join(' ').trim();
-      await handlePikoAI({...msg,text:prompt||'Someone called your name. Reply naturally.'},env);
+      await handlePikoAI({...msg,text:text.trim()||'Someone called your name. Reply naturally.'},env);
       return true;
     }
-    const chat=String(msg.chat.id),text=msg.text.toLowerCase();
+    const chat=String(msg.chat.id);
     const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
-    const match=f.rows.find(x=>x.keyword&&text.includes(x.keyword.toLowerCase()));
-    if(match)await reply(env,msg.chat.id,esc(match.response));
-  }'),'ig'),' ');
-      if(botName)prompt=prompt.replace(new RegExp('(^|[^\\p{L}\\p{N}_])'+botName.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\  if(!cmd&&msg.text){
-    // Answer group AI only when Piko is mentioned or a member replies to Piko.
-    const botInfo=await getBotInfo(env);
-    const username=String(botInfo?.username||'').toLowerCase();
-    const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
-    const lowerText=msg.text.toLowerCase();
-    const words=lowerText.split(/[^a-z0-9_]+/);
-    const usernameMention=!!username&&lowerText.includes('@'+username);
-    const nameMention=!!botName&&words.includes(botName);
-    const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
-    if(usernameMention||nameMention||repliedToPiko){
-      const prompt=msg.text.split('@'+username).join(' ').split(botName).join(' ').trim();
-      await handlePikoAI({...msg,text:prompt||'Someone called your name. Reply naturally.'},env);
-      return true;
-    }
-    const chat=String(msg.chat.id),text=msg.text.toLowerCase();
-    const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
-    const match=f.rows.find(x=>x.keyword&&text.includes(x.keyword.toLowerCase()));
-    if(match)await reply(env,msg.chat.id,esc(match.response));
-  }')+'(?=$|[^\\p{L}\\p{N}_])','giu'),'$1 ');
-      prompt=prompt.trim();
-      await handlePikoAI({...msg,text:prompt||'Someone called your name. Reply naturally.'},env);
-      return true;
-    }
-    const chat=String(msg.chat.id),lower=lowerText;
-    const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
-    const match=f.rows.find(x=>x.keyword&&lower.includes(x.keyword.toLowerCase()));
+    const match=f.rows.find(x=>x.keyword&&lowerText.includes(x.keyword.toLowerCase()));
     if(match)await reply(env,msg.chat.id,esc(match.response));
   }
   return false;
