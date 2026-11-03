@@ -21,7 +21,7 @@ import {
   botIdentity
 } from './helpers.js';
 import { detectMedia, validateSubmissionForMode, formatMediaBadge } from './media.js';
-import { handlePikoDM, handlePikoGroup, handlePikoAI } from './piko.js';
+import { handlePikoDM, handlePikoGroup, handlePikoAI, handlePikoVoice } from './piko.js';
 
 // ────────────────────────────────────────────────────────────
 // UPDATE ENTRY
@@ -142,7 +142,6 @@ async function handleDM(msg, env, ctx) {
   ]);
 
   const cmd = parseCommand(text);
-  if (await handlePikoDM(msg, env, cmd)) return;
 
   // deldb keypad state — numeric typed messages
   const deldbMode = await kvGet(env, `deldb:${userId}`);
@@ -169,6 +168,8 @@ async function handleDM(msg, env, ctx) {
   if (!cmd && pendingSubmitRun) {
     return handleSubmitEntry(env, msg, Number(pendingSubmitRun));
   }
+
+  if (await handlePikoDM(msg, env, cmd)) return;
 
   if (cmd) {
     switch (cmd.name) {
@@ -272,6 +273,7 @@ async function handleDM(msg, env, ctx) {
       return send(env, chatId, `❌ Failed to post.`);
     }
   }
+  if (msg.voice || msg.audio) return handlePikoVoice(msg, env);
   if (!cmd) return handlePikoAI(msg, env);
 }
 
