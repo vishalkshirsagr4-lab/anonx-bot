@@ -179,14 +179,14 @@ async function funCommand(env,msg,cmd){
     return sendFunMedia(env,msg.chat.id,'ship',msg.message_id);
   }
   if(cmd.name==='roll'){
-    await reply(env,msg.chat.id,'🎲 You rolled <b>'+rand(1,6)+'</b>.',{reply_to_message_id:msg.message_id});
+    await reply(env,msg.chat.id,(target?mention(target)+' ':'')+'🎲 You rolled <b>'+rand(1,6)+'</b>.',{reply_to_message_id:msg.message_id});
     return sendFunMedia(env,msg.chat.id,'roll',msg.message_id);
   }
   if(cmd.name==='trivia'){
     const [question,answer,choices]=TRIVIA[rand(0,TRIVIA.length-1)],shuffled=[...choices].sort(()=>Math.random()-0.5);
     const buttons=shuffled.map((v,i)=>[{text:(i+1)+'. '+v,callback_data:'piko_trivia_'+msg.from.id+'_'+(v===answer?'1':'0')}]);
     await q(env,'INSERT OR REPLACE INTO kv_store(key,value,expires_at) VALUES(?,?,?)',['piko_trivia:'+msg.from.id,answer,Date.now()+60000]);
-    await reply(env,msg.chat.id,'❓ <b>'+question+'</b>',{reply_markup:{inline_keyboard:buttons},reply_to_message_id:msg.message_id});
+    await reply(env,msg.chat.id,(target?mention(target)+' ':'')+'❓ <b>'+question+'</b>',{reply_markup:{inline_keyboard:buttons},reply_to_message_id:msg.message_id});
     return sendFunMedia(env,msg.chat.id,'trivia',msg.message_id);
   }
 }
@@ -321,7 +321,7 @@ export async function handlePikoGroup(msg,env,cmd){
     return false;
   }
   if(cmd&&PIKO_COMMANDS.has(cmd.name)&&['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){await groupTools(env,msg,cmd);return true;}
-  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
+  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick','setship','setroll','settrivia','sethug','setslap','setpunch','setkick'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
   if(!cmd&&msg.text){
     // Answer group AI only when Piko is mentioned or a member replies to Piko.
     const botInfo=await getBotInfo(env);
