@@ -187,8 +187,11 @@ async function sendFunMedia(env,chatId,name,replyTo){
     console.error('Piko fun media send failed:',{name,method,replyTo,error_code:result?.error_code,description:result?.description});
     return false;
   }
+  // Some Telegram responses omit reply_to_message even when the send
+  // succeeded. Only report a mismatch when Telegram explicitly returns a
+  // different replied-to message ID.
   const actualReplyId=result.result?.reply_to_message?.message_id;
-  if(actualReplyId!==replyTo){
+  if(Number.isInteger(actualReplyId)&&actualReplyId!==replyTo){
     console.error('Piko fun media reply mismatch:',{name,replyTo,actualReplyId});
     return false;
   }
