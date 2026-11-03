@@ -74,7 +74,7 @@ export async function generateGameContent(env, type, topic = 'mixed') {
   if (!key) return null;
   const mode = String(topic || 'mixed').slice(0, 60);
   const schema = type === 'word'
-    ? 'Return JSON only: {"word":"exactly six lowercase English letters"}.'
+    ? 'Return JSON only: {"word":"exactly six lowercase English letters","hint":"a short, fair clue that does not reveal the word"}.'
     : 'Return JSON only: {"q":"short question or puzzle","a":["four distinct short options"],"c":0}. c is the zero-based index of the one correct option.';
   const theme = mode.toLowerCase().includes('anime')
     ? 'Use popular anime themes and well-known characters, but create original questions. Avoid quoting dialogue or reproducing copyrighted text.'
@@ -105,7 +105,7 @@ export async function generateGameContent(env, type, topic = 'mixed') {
   if (!response.ok) throw new Error(data.error?.message || 'Groq game generation failed');
   const raw = String(data.choices?.[0]?.message?.content || '').replace(/^`{3}(?:json)?/i, '').replace(/`{3}$/,'').trim();
   const parsed = JSON.parse(raw);
-  if (type === 'word') return /^[a-z]{6}$/i.test(parsed.word || '') ? { word: parsed.word } : null;
+  if (type === 'word') return /^[a-z]{6}$/i.test(parsed.word || '') && typeof parsed.hint === 'string' ? { word: parsed.word.toLowerCase(), hint: parsed.hint.slice(0, 180) } : null;
   if (typeof parsed.q !== 'string' || !Array.isArray(parsed.a) || parsed.a.length !== 4 ||
       !Number.isInteger(parsed.c) || parsed.c < 0 || parsed.c > 3 ||
       parsed.a.some(x => typeof x !== 'string' || !x.trim())) return null;
