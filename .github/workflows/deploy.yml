@@ -9,6 +9,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +51,7 @@ jobs:
           OWNER_IDS: ${{ secrets.OWNER_IDS || secrets.OWNER_ID }}
 
       - name: Configure optional Groq secret
-        if: ${{ secrets.GROQ_API_KEY != '' }}
+        if: ${{ env.GROQ_API_KEY != '' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
