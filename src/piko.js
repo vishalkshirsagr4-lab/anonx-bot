@@ -120,7 +120,7 @@ async function sendFunMedia(env,chatId,name,replyTo){
   const item=items[rand(0,items.length-1)];
   const result=await tg(env,item.type==='animation'?'sendAnimation':'sendSticker',{
     chat_id:chatId,[item.type==='animation'?'animation':'sticker']:item.file_id,
-    ...(replyTo?{reply_to_message_id:replyTo}:{})
+    ...(replyTo?{reply_parameters:{message_id:replyTo,allow_sending_without_reply:true}}:{})
   });
   if(!result.ok)console.error('Piko fun media send failed:',name,result.description);
   return !!result.ok;
