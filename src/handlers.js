@@ -504,7 +504,7 @@ export async function setupCommands(env) {
     { command: 'daily', description: 'Earn daily coins' },
     { command: 'work', description: 'Earn coins' },
     { command: 'crime', description: 'Play a fictional coin challenge' },
-    { command: 'img', description: 'Generate an AI image' },
+    { command: 'img', description: 'Generate an AI image' },\n    { command: 'search', description: 'Search song details' },\n    { command: 'music', description: 'Find official music links' },\n    { command: 'play', description: 'Find official listening options' },\n    { command: 'search', description: 'Search song details' },\n    { command: 'music', description: 'Find official music links' },\n    { command: 'play', description: 'Find official listening options' },
     { command: 'trivia', description: 'Fresh AI trivia (try anime or genz)' },
     { command: 'roll', description: 'Roll a dice' },
     { command: 'pay', description: 'Send coins by replying to a user' },
