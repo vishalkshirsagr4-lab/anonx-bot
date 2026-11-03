@@ -1,4 +1,3 @@
-
 name: Deploy Cloudflare Worker
 
 on:
@@ -9,8 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -19,16 +16,17 @@ jobs:
         with:
           node-version: '20'
 
-      - run: npm install
+      - name: Install dependencies
+        run: npm install
 
-      - name: Validate JavaScript and existing tests
+      - name: Validate JavaScript and build
         run: |
           node --check src/piko.js
           node --check src/handlers.js
           node --check src/callbacks.js
           npm run build
 
-      - name: Deploy
+      - name: Deploy Worker and upload secrets
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -41,6 +39,7 @@ jobs:
             TURSO_AUTH_TOKEN
             OWNER_ID
             OWNER_IDS
+            GROQ_API_KEY
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
@@ -49,13 +48,4 @@ jobs:
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
           OWNER_IDS: ${{ secrets.OWNER_IDS || secrets.OWNER_ID }}
-
-      - name: Configure optional Groq secret
-        if: ${{ env.GROQ_API_KEY != '' }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: secret put GROQ_API_KEY
-        env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
