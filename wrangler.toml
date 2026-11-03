@@ -8,7 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 enabled = true
 
 [vars]
-BOT_NAME = "AnonX"
+BOT_NAME = "Piko"
 MULTI_ANON = "true"
 ANON_SHUFFLE_MODE = "false"
 TOPIC_END_IDLE_MINUTES = "10"
