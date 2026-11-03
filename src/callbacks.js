@@ -158,8 +158,7 @@ export async function handleCallback(cq, env) {
       const welcome =
         `Hello ${esc(cq.from.first_name)} 👋\n\n` +
         `I am <b>${esc(state.BOT_NAME)}</b> — the ` +
-        `<b>Anonymous Q&amp;A Bot</b>. Post and reply anonymously, ` +
-        `join daily contests.\n\nSelect an option below:`;
+        `your AI and community bot. Chat with Piko, use group tools, post anonymously and join contests.\n\nSelect an option below:`;
 
       return editCq(env, cq, welcome, {
         inline_keyboard: [
