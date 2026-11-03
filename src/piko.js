@@ -164,38 +164,35 @@ function findFunTarget(msg) {
 const FUN_MEDIA_COMMANDS=['hug','wave','highfive','cheer','kick','punch','slap'];
 async function sendFunMedia(env,chatId,name,replyTo){
   const items=await kvGet(env,'piko_media:'+name,true);
-  if(!Array.isArray(items)||!items.length||!Number.isInteger(replyTo)||replyTo<=0){
-    console.error('Piko fun media unavailable:',{name,replyTo,reason:!Array.isArray(items)||!items.length?'empty media pack':'invalid reply target'});
-    return false;
+  if(!Array.isArray(items)||!items.length){
+    return {ok:false,reason:'No saved stickers found for /'+name+'. Configure the pack again in Piko DM using /set'+name+'.'};
+  }
+  if(!Number.isInteger(replyTo)||replyTo<=0){
+    return {ok:false,reason:'I could not identify the original message. Reply directly to the member message.'};
   }
   const valid=items.filter(item=>item&&typeof item.file_id==='string'&&item.file_id&&['sticker','animation'].includes(item.type));
   if(!valid.length){
-    console.error('Piko fun media pack has no valid Telegram file IDs:',{name,count:items.length});
-    return false;
+    return {ok:false,reason:'The saved /'+name+' pack has no valid Telegram file IDs. Please configure it again with /set'+name+'.'};
   }
   const item=valid[rand(0,valid.length-1)];
   const method=item.type==='animation'?'sendAnimation':'sendSticker';
   const mediaField=item.type==='animation'?'animation':'sticker';
-  // Telegram reply_parameters explicitly binds the sticker/GIF to the
-  // exact message that the command author replied to.
   const result=await tg(env,method,{
     chat_id:chatId,
     [mediaField]:item.file_id,
-    reply_parameters:{message_id:replyTo,allow_sending_without_reply:false}
+    reply_to_message_id:replyTo
   });
   if(!result?.ok){
-    console.error('Piko fun media send failed:',{name,method,replyTo,error_code:result?.error_code,description:result?.description});
-    return false;
+    const description=String(result?.description||'Unknown Telegram API error').slice(0,220);
+    console.error('Piko fun media send failed:',{name,method,replyTo,error_code:result?.error_code,description});
+    return {ok:false,reason:'Telegram rejected the saved media: '+description};
   }
-  // Some Telegram responses omit reply_to_message even when the send
-  // succeeded. Only report a mismatch when Telegram explicitly returns a
-  // different replied-to message ID.
   const actualReplyId=result.result?.reply_to_message?.message_id;
   if(Number.isInteger(actualReplyId)&&actualReplyId!==replyTo){
     console.error('Piko fun media reply mismatch:',{name,replyTo,actualReplyId});
-    return false;
+    return {ok:false,reason:'Telegram sent the sticker but attached it to a different message. Please report this to the bot owner.'};
   }
-  return true;
+  return {ok:true};
 }
 async function setFunMedia(env,msg,cmd){
   if(!isOwner(msg.from.id)){await reply(env,msg.chat.id,'⛔ Owner only.');return true;}
@@ -238,7 +235,7 @@ async function funCommand(env,msg,cmd){
       return reply(env,msg.chat.id,'Reply directly to the message with /'+cmd.name+'.');
     }
     const sent=await sendFunMedia(env,msg.chat.id,cmd.name,original.message_id);
-    if(!sent)return reply(env,msg.chat.id,'I could not attach the saved media to that message. Check the saved media pack and bot permissions.');
+    if(!sent.ok)return reply(env,msg.chat.id,'❌ '+sent.reason,{reply_to_message_id:msg.message_id});
     return true;
   }
   const target=findFunTarget(msg);
