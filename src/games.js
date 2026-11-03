@@ -4,6 +4,7 @@ import { q, kvGet, kvPut, kvDel, addCoins } from './db.js';
 import { send, editCq } from './cards.js';
 import { tg } from './telegram.js';
 import { esc } from './helpers.js';
+import { generateGameContent } from './piko.js';
 
 const BANK = {
   quiz: [
@@ -45,14 +46,18 @@ const buttons = (gameId, items, prefix) => ({
   }])
 });
 
-async function startChoiceGame(env, chatId, from, type) {
+async function startChoiceGame(env, chatId, from, type, topic = '') {
   const old = await kvGet(env, key(chatId), true);
-  if (old && old.expires > Date.now()) {
+  if (old && old.expires > Date.now() && !old.winner && old.status !== 'done') {
     return send(env, chatId, '🎮 A game is already running here. Finish it first or wait for it to expire.');
   }
-  const item = pick(BANK[type]);
+  let item = pick(BANK[type]);
+  try {
+    const fresh = await generateGameContent(env, type, topic);
+    if (fresh && typeof fresh.q === 'string' && Array.isArray(fresh.a) && fresh.a.length === 4 && Number.isInteger(fresh.c) && fresh.c >= 0 && fresh.c < 4) item = fresh;
+  } catch (error) { console.error('Groq game generation failed:', error?.message || String(error)); }
   const id = Date.now().toString(36);
-  const session = { id, type, answer: item.c, question: item.q, choices: item.a, expires: Date.now() + 120000, winner: false };
+  const session = { id, type, topic: topic.slice(0,50), answer: item.c, question: item.q, choices: item.a, expires: Date.now() + 120000, winner: false };
   await kvPut(env, key(chatId), session, 120);
   const title = type === 'quiz' ? '🧠 Quick Quiz' : type === 'riddle' ? '🧩 Riddle Time' : '🎭 Emoji Guess';
   const prefix = type === 'quiz' ? 'gq_' : type === 'riddle' ? 'gr_' : 'ge_';
@@ -72,7 +77,8 @@ export async function handleGameCommand(env, msg, cmd) {
       '/riddle — Solve a riddle\n/dice — Roll the dice\n/emoji — Guess the emoji phrase\n/hunt — Find hidden coins\n\n' +
       'Win games to earn coins. One active group game at a time.');
   }
-  if (name === 'quiz' || name === 'riddle' || name === 'emoji') return startChoiceGame(env, chatId, from, name);
+  if (name === 'quiz' || name === 'trivia') return startChoiceGame(env, chatId, from, 'quiz', cmd.arg || 'mixed');
+  if (name === 'riddle' || name === 'emoji') return startChoiceGame(env, chatId, from, name, cmd.arg || 'mixed');
   if (name === 'rps') {
     const id = Date.now().toString(36);
     const session = {
@@ -100,8 +106,9 @@ export async function handleGameCommand(env, msg, cmd) {
     );
   }
   if (name === 'word') {
-    const words = ['planet','garden','puzzle','silver','window','rocket','orange','castle'];
-    const word = pick(words);
+    const words = ['planet','garden','puzzle','silver','window','rocket','orange','castle','dragon','mystic','naruto','zenits'];
+    let word = pick(words);
+    try { const fresh = await generateGameContent(env, 'word', cmd.arg || 'mixed'); if (typeof fresh.word === 'string' && /^[a-z]{6}$/i.test(fresh.word)) word = fresh.word.toLowerCase(); } catch (error) { console.error('Groq word generation failed:', error?.message || String(error)); }
     const id = Date.now().toString(36);
     const session = { id, type: 'word', word, attempts: 5, expires: Date.now() + 180000 };
     await kvPut(env, key(chatId), session, 180);
@@ -173,6 +180,7 @@ export async function handleGameCallback(env, cq, data) {
     if (!claimed) return { toast: 'Someone already answered!', alert: false };
     await addCoins(env, userId, 15);
     await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' + esc(session.question));
+    await kvDel(env, key(chatId));
     return { toast: 'Correct! +15 coins' };
   }
   if (data.startsWith('grpm_join_')) {
