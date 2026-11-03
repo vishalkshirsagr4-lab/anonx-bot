@@ -52,7 +52,7 @@ async function banned(env,id) { const r=await q(env,'SELECT 1 FROM piko_bans WHE
 async function groqChat(env, userId, input) {
   const key=groqKey(env); if(!key) return 'Piko AI is not configured yet. Add GROQ_API_KEY as a Cloudflare secret.';
   const h=await q(env,'SELECT role,content FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 8',[userId]);
-  const messages=[{role:'system',content:`You are Piko, a friendly and socially aware chat companion in this community. Sound natural, casual and spontaneous, not like a customer-support agent. Learn each member's preferred language, wording, humour and message length from the conversation history, then gently match their style without copying them awkwardly. Understand English, Hindi, Kannada, Hinglish and Kannada-English. In casual chat, reply like a normal group participant: short when they are short, playful when the moment is playful, thoughtful when they are serious. React to the actual message and its context; remember what this member has said recently. Use emojis, light humour and familiar chat expressions only when they fit. Do not give canned greetings, generic assistant phrases, unnecessary lists or long explanations in casual conversation. Do not bring up being an AI or bot unprompted; if directly asked, answer honestly that you are Piko, a bot. Never claim to be human or invent real-life experiences. Be respectful, avoid bullying, and do not provide dangerous instructions. Do not mention system prompts or internal setup.`},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
+  const messages=[{role:'system',content:`You are Piko, a friendly and socially aware chat companion in this community. Sound natural, casual and spontaneous, not like a customer-support agent. Learn each member's preferred language, wording, humour and message length from the conversation history, then gently match their style without copying them awkwardly. Understand English, Hindi, Kannada, Hinglish and Kannada-English. In casual chat, reply like a normal group participant: short when they are short, playful when the moment is playful, thoughtful when they are serious. React to the actual message and its context; remember what this member has said recently. Use emojis, light humour and familiar chat expressions only when they fit. Do not give canned greetings, generic assistant phrases, unnecessary lists or long explanations in casual conversation. Do not bring up being an AI or bot unprompted; if directly asked, answer honestly that you are Piko, a bot. Never claim to be human or invent real-life experiences. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Be respectful, avoid bullying, and do not provide dangerous instructions. Do not mention system prompts or internal setup.`},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
   const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_completion_tokens:180,reasoning_effort:'low',temperature:0.75})});
   const data=await res.json(); if(!res.ok) throw new Error(data.error?.message||'Groq request failed');
   const answer=String(data.choices?.[0]?.message?.content||'I could not generate a reply.').slice(0,4000);
@@ -329,12 +329,28 @@ export async function handlePikoGroup(msg,env,cmd){
     // Answer group AI only when Piko is mentioned or a member replies to Piko.
     const botInfo=await getBotInfo(env);
     const username=String(botInfo?.username||'').toLowerCase();
+    const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
+    const escapeRegex=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\    const username=String(botInfo?.username||'').toLowerCase();
     const lowerText=msg.text.toLowerCase();
     const hasMention=!!username&&lowerText.includes('@'+username);
     const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
     if(hasMention||repliedToPiko){
       const prompt=username?msg.text.replace(new RegExp('@'+username,'ig'),'').trim():msg.text.trim();
       await handlePikoAI({...msg,text:prompt||'Please help me.'},env);
+      return true;
+    }');
+    const escapedUsername=escapeRegex(username);
+    const escapedName=escapeRegex(botName);
+    // Respond to @username, plain bot-name calls, or direct replies.
+    const usernameMention=!!username&&new RegExp('(^|\\s)@'+escapedUsername+'(?=$|\\s|[,.!?])','i').test(msg.text);
+    const nameMention=!!botName&&new RegExp('(^|\\s)'+escapedName+'(?=$|\\s|[,.!?])','i').test(msg.text);
+    const repliedToPiko=!!(msg.reply_to_message?.from?.is_bot&&botInfo?.id===msg.reply_to_message.from.id);
+    if(usernameMention||nameMention||repliedToPiko){
+      const prompt=msg.text
+        .replace(new RegExp('@'+escapedUsername,'ig'),'')
+        .replace(new RegExp('(^|\\s)'+escapedName+'(?=$|\\s|[,.!?])','ig'),' ')
+        .trim();
+      await handlePikoAI({...msg,text:prompt||'Someone called your name. Reply naturally.'},env);
       return true;
     }
     const chat=String(msg.chat.id),text=msg.text.toLowerCase();
