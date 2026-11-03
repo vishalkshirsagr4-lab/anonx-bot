@@ -1,7 +1,7 @@
 // Piko feature pack: Groq AI, voice transcription, credits, economy, fun and group tools.
 // All credentials are supplied through Cloudflare Worker secrets/bindings.
 import { state, isOwner } from './config.js';
-import { q, batch } from './db.js';
+import { q, batch, kvGet, kvPut, kvDel } from './db.js';
 import { tg, tgForm } from './telegram.js';
 import { getBotInfo } from './helpers.js';
 
@@ -106,27 +106,90 @@ const TRIVIA=[
  ['Gas plants absorb?','CO₂',['O₂','N₂','CO₂','H₂']],
  ['Largest ocean?','Pacific',['Atlantic','Pacific','Indian','Arctic']]
 ];
+function findFunTarget(msg) {
+  const replied=msg.reply_to_message?.from;
+  if(replied&&!replied.is_bot&&replied.id!==msg.from.id)return replied;
+  const entities=[...(msg.entities||[]),...(msg.caption_entities||[])];
+  for(const entity of entities){
+    if(entity.type==='text_mention'&&entity.user&&!entity.user.is_bot&&entity.user.id!==msg.from.id)return entity.user;
+    if(entity.type==='mention'){
+      const raw=String(msg.text||'').slice(entity.offset,entity.offset+entity.length);
+      if(raw)return {id:0,username:raw.slice(1),first_name:raw};
+    }
+  }
+  const raw=String(msg.text||'').match(/(?:^|\\s)@([A-Za-z0-9_]{5,32})(?:\\s|$)/);
+  if(raw)return {id:0,username:raw[1],first_name:'@'+raw[1]};
+  return null;
+}
+const FUN_MEDIA_COMMANDS=['ship','roll','trivia','hug','slap','punch','kick'];
+async function sendFunMedia(env,chatId,name,replyTo){
+  const items=await kvGet(env,'piko_media:'+name,true);
+  if(!Array.isArray(items)||!items.length)return false;
+  const item=items[rand(0,items.length-1)];
+  const result=await tg(env,item.type==='animation'?'sendAnimation':'sendSticker',{
+    chat_id:chatId,[item.type==='animation'?'animation':'sticker']:item.file_id,
+    ...(replyTo?{reply_to_message_id:replyTo}:{})
+  });
+  if(!result.ok)console.error('Piko fun media send failed:',name,result.description);
+  return !!result.ok;
+}
+async function setFunMedia(env,msg,cmd){
+  if(!isOwner(msg.from.id)){await reply(env,msg.chat.id,'⛔ Owner only.');return true;}
+  if(msg.chat.type!=='private'){await reply(env,msg.chat.id,'Please configure media in Piko DM.');return true;}
+  const name=cmd.name.slice(3);
+  await kvPut(env,'piko_media_pending:'+msg.from.id,name,1800);
+  const current=await kvGet(env,'piko_media:'+name,true);
+  await reply(env,msg.chat.id,'📥 <b>Set /'+name+' media</b>\n\nSend a sticker or GIF/animation now. I will keep asking for more until you send /cancel.\n\nSaved items: <b>'+(Array.isArray(current)?current.length:0)+'</b>');
+  return true;
+}
+async function handleFunMediaSetup(env,msg,cmd){
+  if(!isOwner(msg.from.id))return false;
+  const pending=await kvGet(env,'piko_media_pending:'+msg.from.id);
+  if(!pending)return false;
+  if(cmd?.name==='cancel'){
+    await kvDel(env,'piko_media_pending:'+msg.from.id);
+    await reply(env,msg.chat.id,'✅ Media setup cancelled. Previously saved media is kept.');
+    return true;
+  }
+  const media=msg.sticker?{type:'sticker',file_id:msg.sticker.file_id}:msg.animation?{type:'animation',file_id:msg.animation.file_id}:null;
+  if(!media){
+    await reply(env,msg.chat.id,'Please send a Telegram sticker or GIF/animation. Send /cancel to finish.');
+    return true;
+  }
+  const key='piko_media:'+pending;
+  const items=await kvGet(env,key,true);
+  const next=Array.isArray(items)?items:[];
+  if(!next.some(x=>x.file_id===media.file_id))next.push(media);
+  await kvPut(env,key,next);
+  await reply(env,msg.chat.id,'✅ Added '+media.type+'. Total saved for /'+pending+': <b>'+next.length+'</b>\n\nSend another sticker/GIF, or /cancel when finished.');
+  return true;
+}
 async function funCommand(env,msg,cmd){
-  const target=msg.reply_to_message?.from;
+  const target=findFunTarget(msg);
   if(['hug','slap','punch','kick'].includes(cmd.name)){
-    if(!target)return reply(env,msg.chat.id,'Reply to someone to use /'+cmd.name+'.');
-    const verbs={hug:'gives a friendly hug to',slap:'playfully slaps',punch:'challenges',kick:'playfully kicks'};
-    const icons={hug:'🤗',slap:'👋',punch:'👊',kick:'🦵'};
-    return reply(env,msg.chat.id,`${icons[cmd.name]} ${mention(msg.from)} ${verbs[cmd.name]} ${mention(target)}!`);
+    if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /'+cmd.name+' @username');
+    const verbs={hug:'sends a friendly hug to',slap:'sends a playful cartoon reaction to',punch:'sends a silly cartoon reaction to',kick:'sends a silly cartoon reaction to'};
+    await reply(env,msg.chat.id,'✨ '+mention(msg.from)+' '+verbs[cmd.name]+' '+mention(target)+'!',{reply_to_message_id:msg.message_id});
+    return sendFunMedia(env,msg.chat.id,cmd.name,msg.message_id);
   }
   if(cmd.name==='ship'){
-    if(!target)return reply(env,msg.chat.id,'Reply to someone: /ship');
-    const score=rand(0,100);return reply(env,msg.chat.id,`✨ <b>Friendship match</b>\n${mention(msg.from)} + ${mention(target)}\n<b>${score}%</b> ${'💚'.repeat(Math.floor(score/20))}`);
+    if(!target)return reply(env,msg.chat.id,'Reply to someone or tag them: /ship @username');
+    const score=rand(0,100);
+    await reply(env,msg.chat.id,`✨ <b>Friendship match</b>\n${mention(msg.from)} + ${mention(target)}\n<b>${score}%</b> ${'💚'.repeat(Math.floor(score/20))}`,{reply_to_message_id:msg.message_id});
+    return sendFunMedia(env,msg.chat.id,'ship',msg.message_id);
   }
-  if(cmd.name==='roll') return reply(env,msg.chat.id,'🎲 You rolled <b>'+rand(1,6)+'</b>.');
+  if(cmd.name==='roll'){
+    await reply(env,msg.chat.id,'🎲 You rolled <b>'+rand(1,6)+'</b>.',{reply_to_message_id:msg.message_id});
+    return sendFunMedia(env,msg.chat.id,'roll',msg.message_id);
+  }
   if(cmd.name==='trivia'){
     const [question,answer,choices]=TRIVIA[rand(0,TRIVIA.length-1)],shuffled=[...choices].sort(()=>Math.random()-0.5);
     const buttons=shuffled.map((v,i)=>[{text:(i+1)+'. '+v,callback_data:'piko_trivia_'+msg.from.id+'_'+(v===answer?'1':'0')}]);
     await q(env,'INSERT OR REPLACE INTO kv_store(key,value,expires_at) VALUES(?,?,?)',['piko_trivia:'+msg.from.id,answer,Date.now()+60000]);
-    return reply(env,msg.chat.id,'❓ <b>'+question+'</b>',{reply_markup:{inline_keyboard:buttons}});
+    await reply(env,msg.chat.id,'❓ <b>'+question+'</b>',{reply_markup:{inline_keyboard:buttons},reply_to_message_id:msg.message_id});
+    return sendFunMedia(env,msg.chat.id,'trivia',msg.message_id);
   }
 }
-
 async function imageCommand(env,msg,cmd){
   const prompt=String(cmd.arg||'').trim(); if(!prompt)return reply(env,msg.chat.id,'Usage: /img describe your image');
   const p=await profile(env,msg.from);if(p.credits<5)return reply(env,msg.chat.id,'You need 5 credits. Use /daily to earn coins; ask the owner about credits.');
@@ -217,9 +280,11 @@ async function adminCommand(env,msg,cmd){
   return true;
 }
 
-const PIKO_COMMANDS=new Set(['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['setship','setroll','settrivia','sethug','setslap','setpunch','setkick','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','trivia','hug','slap','punch','kick','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
+  if(await handleFunMediaSetup(env,msg,cmd))return true;
+  if(cmd&&cmd.name.startsWith('set')&&FUN_MEDIA_COMMANDS.includes(cmd.name.slice(3)))return setFunMedia(env,msg,cmd);
   if(await banned(env,msg.from.id))return true;
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     await profile(env,msg.from);
