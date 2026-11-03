@@ -5,7 +5,7 @@ Piko runs on Cloudflare Workers with Turso (libSQL) storage. Existing anonymous 
 ## Piko features
 
 - Groq-powered AI chat in private messages
-- Voice-message transcription with Groq Whisper
+- Voice-message transcription with Groq Whisper\n- Music discovery: `/search`, `/music`, `/play` (song metadata and supported official listening links; no media downloading)
 - AI image generation (5 credits per image)
 - Credits and coin economy: `/credits`, `/daily`, `/work`, `/crime`, `/rob`, `/pay`
 - Fun commands: `/ship`, `/roll`, `/trivia`, `/hug`, `/slap`, `/punch`, `/kick`
@@ -27,7 +27,7 @@ Keep all credentials out of source files. Configure these as GitHub Actions secr
 - `OWNER_ID` (and optionally `OWNER_IDS`)
 
 Optional:
-- `GROQ_API_KEY` — enables AI chat and voice transcription. Without it, those features explain that setup is required.
+- `GROQ_API_KEY` — enables AI chat and voice transcription. Without it, those features explain that setup is required.\n- `NAZRIYA_API_KEY` — enables Piko music search. Set it as a Cloudflare Worker secret; never put it in `wrangler.toml` or source code.
 
 The GitHub Actions workflow runs JavaScript syntax checks and the build before deploying. The existing test suite requires a configured Turso database, so it is not run against production automatically.
 
