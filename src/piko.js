@@ -323,8 +323,16 @@ export async function handlePikoGroup(msg,env,cmd){
     if(setting.welcome_enabled)for(const m of msg.new_chat_members){if(m.is_bot)continue;const text=String(setting.welcome_text).replaceAll('{first}',m.first_name||'friend').replaceAll('{username}',m.username?'@'+m.username:m.first_name||'friend').replaceAll('{chatname}',msg.chat.title||'this group');await reply(env,msg.chat.id,esc(text));}
     return false;
   }
-  if(cmd&&PIKO_COMMANDS.has(cmd.name)&&['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){await groupTools(env,msg,cmd);return true;}
-  if(cmd&&['credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap'].includes(cmd.name)){await handlePikoDM(msg,env,cmd);return true;}
+  if(cmd&&PIKO_COMMANDS.has(cmd.name)){
+    if(['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){
+      await groupTools(env,msg,cmd);
+      return true;
+    }
+    // Route every other Piko command through the same tested dispatcher used in DM.
+    // This also gives a clear owner-only response instead of silently ignoring admin commands.
+    await handlePikoDM(msg,env,cmd);
+    return true;
+  }
   if(!cmd&&msg.text){
     // Trigger AI for @username, the configured display name, or replies to Piko.
     const botInfo=await getBotInfo(env);
@@ -333,13 +341,19 @@ export async function handlePikoGroup(msg,env,cmd){
     const text=String(msg.text);
     const lowerText=text.toLowerCase();
     const entities=Array.isArray(msg.entities)?msg.entities:[];
-    const usernameMention=!!username&&entities.some(entity=>{
-      if(entity.type!=='mention')return false;
-      return text.slice(entity.offset,entity.offset+entity.length).toLowerCase()==='@'+username;
-    });
+    const usernameMention=!!username&&(
+      lowerText.includes('@'+username)||
+      entities.some(entity=>{
+        if(entity.type!=='mention')return false;
+        return text.slice(entity.offset,entity.offset+entity.length).toLowerCase()==='@'+username;
+      })
+    );
     const nameMention=!!botName&&lowerText.split(/[^\p{L}\p{N}_]+/u).includes(botName);
     const replied=msg.reply_to_message?.from;
-    const repliedToPiko=!!(replied?.is_bot&&botInfo?.id&&Number(replied.id)===Number(botInfo.id));
+    const repliedToPiko=!!(replied?.is_bot&&(
+      (botInfo?.id&&Number(replied.id)===Number(botInfo.id))||
+      (username&&String(replied.username||'').toLowerCase()===username)
+    ));
     if(usernameMention||nameMention||repliedToPiko){
       await handlePikoAI({...msg,text:text.trim()||'Someone called your name. Reply naturally.'},env);
       return true;
