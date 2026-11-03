@@ -117,7 +117,7 @@ function findFunTarget(msg) {
       if(raw)return {id:0,username:raw.slice(1),first_name:raw};
     }
   }
-  const raw=String(msg.text||'').match(/(?:^|\\s)@([A-Za-z0-9_]{5,32})(?:\\s|$)/);
+  const raw=String(msg.text||'').match(/(?:^|\s)@([A-Za-z0-9_]{5,32})(?:\s|$)/);
   if(raw)return {id:0,username:raw[1],first_name:'@'+raw[1]};
   return null;
 }
