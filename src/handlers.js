@@ -526,6 +526,12 @@ export async function setupCommands(env) {
     { command: 'delcontest', description: 'Owner: delete contests' },
     { command: 'xcontest', description: 'Owner: force start contest' },
     { command: 'deldb', description: 'Owner: wipe database' },
+    { command: 'admin', description: 'Piko owner panel' },
+    { command: 'stats', description: 'Piko bot statistics' },
+    { command: 'addcredits', description: 'Owner: adjust credits' },
+    { command: 'addcoins', description: 'Owner: adjust coins' },
+    { command: 'gban', description: 'Owner: block a user' },
+    { command: 'ungban', description: 'Owner: unblock a user' },
   ];
 
   const group = [
