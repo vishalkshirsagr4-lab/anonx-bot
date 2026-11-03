@@ -401,34 +401,37 @@ export async function handlePikoGroup(msg,env,cmd){
     return true;
   }
   if(!cmd&&msg.text){
-    // Trigger AI for @username, the configured display name, or replies to Piko.
-    const botInfo=await getBotInfo(env);
-    const username=String(botInfo?.username||'').trim().toLowerCase();
-    const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
-    const text=String(msg.text);
-    const lowerText=text.toLowerCase();
-    const entities=Array.isArray(msg.entities)?msg.entities:[];
-    const usernameMention=!!username&&(
-      lowerText.includes('@'+username)||
-      entities.some(entity=>{
-        if(entity.type!=='mention')return false;
-        return text.slice(entity.offset,entity.offset+entity.length).toLowerCase()==='@'+username;
-      })
+    // Match both Piko's display name and Telegram username, including punctuation.
+    // Use the known bot username as a fallback if getMe/cache is temporarily unavailable.
+    let botInfo = null;
+    try { botInfo = await getBotInfo(env); }
+    catch (error) { console.error('Piko getMe lookup failed:', error?.message || String(error)); }
+    const username = String(botInfo?.username || 'Piko_Pikobot').replace(/^@/, '').trim().toLowerCase();
+    const botName = String(state.BOT_NAME || 'Piko').trim().toLowerCase();
+    const text = String(msg.text);
+    const lowerText = text.toLowerCase();
+    const entities = Array.isArray(msg.entities) ? msg.entities : [];
+    const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const usernameMention = !!username && (
+      new RegExp('(^|[^a-z0-9_])@' + escapedUsername + '($|[^a-z0-9_])', 'i').test(text) ||
+      entities.some(entity => entity.type === 'mention' &&
+        text.slice(entity.offset, entity.offset + entity.length).toLowerCase() === '@' + username)
     );
-    const nameMention=!!botName&&lowerText.split(/[^\p{L}\p{N}_]+/u).includes(botName);
-    const replied=msg.reply_to_message?.from;
-    const repliedToPiko=!!(replied?.is_bot&&(
-      (botInfo?.id&&Number(replied.id)===Number(botInfo.id))||
-      (username&&String(replied.username||'').toLowerCase()===username)
+    const escapedName = botName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameMention = !!botName && new RegExp('(^|[^\\p{L}\\p{N}_])' + escapedName + '($|[^\\p{L}\\p{N}_])', 'iu').test(text);
+    const replied = msg.reply_to_message?.from;
+    const repliedToPiko = !!(replied?.is_bot && (
+      (botInfo?.id && Number(replied.id) === Number(botInfo.id)) ||
+      (username && String(replied.username || '').toLowerCase() === username)
     ));
-    if(usernameMention||nameMention||repliedToPiko){
-      await handlePikoAI({...msg,text:text.trim()||'Someone called your name. Reply naturally.'},env);
+    if(usernameMention || nameMention || repliedToPiko){
+      await handlePikoAI({...msg, text: text.trim() || 'Someone called your name. Reply naturally.'}, env);
       return true;
     }
-    const chat=String(msg.chat.id);
-    const f=await q(env,'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC',[chat]);
-    const match=f.rows.find(x=>x.keyword&&lowerText.includes(x.keyword.toLowerCase()));
-    if(match)await reply(env,msg.chat.id,esc(match.response));
+    const chat = String(msg.chat.id);
+    const f = await q(env, 'SELECT keyword,response FROM piko_filters WHERE chat_id=? ORDER BY LENGTH(keyword) DESC', [chat]);
+    const match = f.rows.find(x => x.keyword && lowerText.includes(x.keyword.toLowerCase()));
+    if(match) await reply(env, msg.chat.id, esc(match.response));
   }
   return false;
 }
