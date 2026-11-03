@@ -173,7 +173,7 @@ async function funCommand(env,msg,cmd){
     // Only accept a direct reply; target the member's original message ID.
     const original=msg.reply_to_message;
     if(!original||!original.from||original.from.is_bot||original.from.id===msg.from.id){
-      return reply(env,msg.chat.id,'Reply directly to a group member\\'s message with /'+cmd.name+'.');
+      return reply(env,msg.chat.id,'Reply directly to a group member\'s message with /'+cmd.name+'.');
     }
     const sent=await sendFunMedia(env,msg.chat.id,cmd.name,original.message_id);
     if(!sent)return reply(env,msg.chat.id,'I could not attach the saved media to that message. Check the saved media pack and bot permissions.');
