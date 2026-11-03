@@ -199,6 +199,112 @@ async function whisperCommand(env,msg,cmd) {
   await reply(env, msg.chat.id, '🔐 A whisper message to ' + mention(target) + '.\nOnly they can read the message.');
 }
 
+
+const NAZRIYA_SEARCH_URL = 'https://nazriya.teamgod.online/api/search';
+const MUSIC_LINK_HOSTS = new Set([
+  'youtube.com','www.youtube.com','youtu.be','music.youtube.com',
+  'open.spotify.com','spotify.com','music.apple.com','itunes.apple.com',
+  'soundcloud.com','www.soundcloud.com','deezer.com','www.deezer.com',
+  'jiosaavn.com','www.jiosaavn.com','gaana.com','wynk.in'
+]);
+function musicItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  for (const key of ['results','data','songs','tracks','items','result']) {
+    const value = payload[key];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') {
+      for (const nested of ['results','songs','tracks','items']) {
+        if (Array.isArray(value[nested])) return value[nested];
+      }
+    }
+  }
+  return payload.data && typeof payload.data === 'object' ? [payload.data] : [];
+}
+function musicField(item, keys) {
+  for (const key of keys) {
+    const value = item?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+function officialMusicLink(item) {
+  const raw = musicField(item, ['official_url','listen_url','stream_url','web_url','url','link']);
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:' || !MUSIC_LINK_HOSTS.has(parsed.hostname.toLowerCase())) return '';
+    if (/\.(mp3|m4a|aac|ogg|opus|wav|flac|mp4|mkv|webm)(?:$|\?)/i.test(parsed.pathname + parsed.search)) return '';
+    return parsed.href;
+  } catch { return ''; }
+}
+async function musicSearchCommand(env, msg, cmd) {
+  const query = String(cmd.arg || '').trim().slice(0, 120);
+  if (!query) {
+    return reply(env, msg.chat.id, '🎵 <b>Piko Music Search</b>\n\nUsage:\n<code>/search song name</code>\n<code>/music song name</code>\n<code>/play song name</code>\n\nI show song details and official listening links when available.');
+  }
+  const apiKey = String(env?.NAZRIYA_API_KEY || '').trim();
+  if (!apiKey) {
+    return reply(env, msg.chat.id, '⚙️ Music search is not configured yet. Add <code>NAZRIYA_API_KEY</code> as a Cloudflare Worker secret, then redeploy.');
+  }
+  const status = await reply(env, msg.chat.id, '🔎 Searching music…');
+  try {
+    const url = new URL(NAZRIYA_SEARCH_URL);
+    url.searchParams.set('q', query);
+    url.searchParams.set('key', apiKey);
+    const response = await fetch(url.toString(), {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000)
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.status === 'error' || payload?.success === false) {
+      throw new Error(String(payload?.message || 'Music provider request failed').slice(0, 180));
+    }
+    const items = musicItems(payload).slice(0, 5);
+    if (!items.length) {
+      await tg(env, 'editMessageText', {
+        chat_id: msg.chat.id, message_id: status.result.message_id,
+        text: '🔎 No matching song details were returned. Try another title or artist.'
+      });
+      return true;
+    }
+    const lines = items.map((item, index) => {
+      const title = musicField(item, ['title','name','song','track']) || 'Unknown title';
+      const artist = musicField(item, ['artist','artists','singer','subtitle','author']) || 'Artist not listed';
+      const album = musicField(item, ['album','album_name']);
+      const link = officialMusicLink(item);
+      const details = [
+        (index + 1) + '. <b>' + esc(title.slice(0, 160)) + '</b>',
+        '   👤 ' + esc(artist.slice(0, 120)),
+        album ? '   💿 ' + esc(album.slice(0, 100)) : '',
+        link ? '   🔗 <a href="' + esc(link) + '">Official listening link</a>' : ''
+      ].filter(Boolean);
+      return details.join('\n');
+    });
+    const heading = cmd.name === 'play'
+      ? '🎧 <b>Official listening options</b>'
+      : '🎵 <b>Music search results</b>';
+    const note = cmd.name === 'play'
+      ? '\n\nChoose an official listening link above. If none is shown, the provider did not return a supported official link.'
+      : '\n\nUse /play ' + esc(query) + ' to view official listening options.';
+    await tg(env, 'editMessageText', {
+      chat_id: msg.chat.id,
+      message_id: status.result.message_id,
+      text: heading + '\n\n' + lines.join('\n\n') + note,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    });
+  } catch (error) {
+    console.error('Piko music search failed:', String(error?.message || error).slice(0, 220));
+    await tg(env, 'editMessageText', {
+      chat_id: msg.chat.id,
+      message_id: status.result.message_id,
+      text: '⚠️ Music search is temporarily unavailable. Please try again later.'
+    });
+  }
+  return true;
+}
+
 async function economy(env,msg,cmd) {
   const id=msg.from.id, a=argsOf(cmd.arg), p=await profile(env,msg.from), now=Date.now();
   if(cmd.name==='credits'||cmd.name==='wallet') return reply(env,msg.chat.id,`💼 <b>Piko Wallet</b>\n\n✨ Credits: <b>${p.credits}</b>\n🪙 Coins: <b>${p.coins||0}</b>\n\nUse /daily and /work to earn coins.`);
@@ -464,7 +570,7 @@ async function adminCommand(env,msg,cmd){
   return true;
 }
 
-const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -472,7 +578,7 @@ export async function handlePikoDM(msg,env,cmd){
   if(await banned(env,msg.from.id))return true;
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     await profile(env,msg.from);
-    if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
+    if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}\n    if(['search','music','play'].includes(cmd.name)){await musicSearchCommand(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
     if(['ship','roll','hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
@@ -568,5 +674,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /music song, /play song (official listening links only)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
 }
