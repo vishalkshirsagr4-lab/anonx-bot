@@ -553,6 +553,7 @@ export async function setupCommands(env) {
     { command: 'crime', description: 'Play a fictional coin challenge' },
     { command: 'rob', description: 'Coin game (reply to a member)' },
     { command: 'pay', description: 'Send coins (reply to a member)' },
+    { command: 'whisper', description: 'Send a private message to a group member' },
     { command: 'sendcoins', description: 'Send coins to a group member' },
     { command: 'img', description: 'Generate an AI image' },
     { command: 'ship', description: 'Friendship match score' },
