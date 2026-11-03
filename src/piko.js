@@ -118,6 +118,75 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
 function remaining(last, hours) { if(!last)return 0; return Math.max(0,hours*3600000-(Date.now()-last)); }
 function duration(ms) { const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000); return h? h+'h '+m+'m':m+'m'; }
 
+async function whisperCommand(env,msg,cmd) {
+  const chatType = msg.chat.type;
+  if (chatType !== 'group' && chatType !== 'supergroup') {
+    await reply(env, msg.chat.id, '🔐 Use /whisper in a group to send a private message.');
+    return;
+  }
+
+  let target = msg.reply_to_message?.from || null;
+  let message = String(cmd.arg || '').trim();
+
+  if (!target) {
+    const match = message.match(/^@([A-Za-z0-9_]{5,32})\\s+([\\s\\S]+)$/);
+    if (!match) {
+      await reply(env, msg.chat.id, 'Usage: <code>/whisper @username your private message</code>\\nOr reply to a member: <code>/whisper your private message</code>');
+      return;
+    }
+    const username = match[1].toLowerCase();
+    message = match[2].trim();
+    const found = await q(env, 'SELECT user_id,first_name,username,dm_open FROM users WHERE LOWER(username)=? LIMIT 1', [username]);
+    target = found.rows[0] ? {
+      id: Number(found.rows[0].user_id),
+      first_name: found.rows[0].first_name || 'User',
+      username: found.rows[0].username || username,
+      is_bot: false,
+      dm_open: Number(found.rows[0].dm_open) === 1
+    } : null;
+  }
+
+  if (!target || !Number.isSafeInteger(Number(target.id)) || Number(target.id) <= 0 || target.is_bot) {
+    await reply(env, msg.chat.id, '❌ I could not find that member. They must have started Piko in DM before you can whisper to them.');
+    return;
+  }
+  if (Number(target.id) === Number(msg.from.id)) {
+    await reply(env, msg.chat.id, 'You cannot whisper to yourself.');
+    return;
+  }
+  if (!message) {
+    await reply(env, msg.chat.id, '❌ Add a message after /whisper.');
+    return;
+  }
+  if (message.length > 3000) {
+    await reply(env, msg.chat.id, '❌ Whisper messages can be up to 3000 characters.');
+    return;
+  }
+
+  const recipient = await q(env, 'SELECT dm_open FROM users WHERE user_id=? LIMIT 1', [Number(target.id)]);
+  if (!recipient.rows.length || Number(recipient.rows[0].dm_open) !== 1) {
+    await reply(env, msg.chat.id, '🔒 This member has not started Piko in DM yet. Ask them to open @Piko_866 and press Start, then try again.');
+    return;
+  }
+
+  const senderName = esc(msg.from.first_name || 'A group member');
+  const privateText = '🔐 <b>A whisper message to you.</b>\\nFrom: ' + senderName + '\\n\\n' + esc(message);
+  const sent = await tg(env, 'sendMessage', {
+    chat_id: Number(target.id),
+    text: privateText,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  });
+
+  if (!sent?.ok) {
+    console.error('Piko whisper delivery failed:', { targetId: Number(target.id), error: sent?.description || 'Unknown Telegram error' });
+    await reply(env, msg.chat.id, '❌ I could not deliver the whisper. The recipient may have blocked Piko or needs to press /start again.');
+    return;
+  }
+
+  await reply(env, msg.chat.id, '🔐 A whisper message to ' + mention(target) + '.\\nOnly they can read the message.');
+}
+
 async function economy(env,msg,cmd) {
   const id=msg.from.id, a=argsOf(cmd.arg), p=await profile(env,msg.from), now=Date.now();
   if(cmd.name==='credits'||cmd.name==='wallet') return reply(env,msg.chat.id,`💼 <b>Piko Wallet</b>\n\n✨ Credits: <b>${p.credits}</b>\n🪙 Coins: <b>${p.coins||0}</b>\n\nUse /daily and /work to earn coins.`);
@@ -383,7 +452,7 @@ async function adminCommand(env,msg,cmd){
   return true;
 }
 
-const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -391,6 +460,7 @@ export async function handlePikoDM(msg,env,cmd){
   if(await banned(env,msg.from.id))return true;
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     await profile(env,msg.from);
+    if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
     if(['ship','roll','hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
@@ -486,5 +556,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup admins: /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
 }
