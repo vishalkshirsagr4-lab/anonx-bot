@@ -214,7 +214,6 @@ const PIKO_COMMANDS=new Set(['credits','wallet','daily','work','crime','rob','pa
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await banned(env,msg.from.id))return true;
-  if(msg.voice||msg.audio){await profile(env,msg.from);await voiceCommand(env,msg);return true;}
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     await profile(env,msg.from);
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
@@ -223,6 +222,12 @@ export async function handlePikoDM(msg,env,cmd){
     if(['admin','stats','addcredits','addcoins','gban','ungban'].includes(cmd.name)){await adminCommand(env,msg,cmd);return true;}
   }
   return false;
+}
+
+export async function handlePikoVoice(msg,env){
+  if(!msg.voice&&!msg.audio)return false;
+  await ensureSchema(env);if(await banned(env,msg.from.id))return true;
+  await profile(env,msg.from);await voiceCommand(env,msg);return true;
 }
 
 export async function handlePikoAI(msg,env){
