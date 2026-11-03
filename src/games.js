@@ -106,13 +106,24 @@ export async function handleGameCommand(env, msg, cmd) {
     );
   }
   if (name === 'word') {
+    const old = await kvGet(env, key(chatId), true);
+    if (old && old.expires > Date.now() && !old.winner && old.status !== 'done') {
+      return send(env, chatId, '🎮 A game is already running here. Finish it first or wait for it to expire.');
+    }
     const words = ['planet','garden','puzzle','silver','window','rocket','orange','castle','dragon','mystic','naruto','zenits'];
     let word = pick(words);
-    try { const fresh = await generateGameContent(env, 'word', cmd.arg || 'mixed'); if (typeof fresh.word === 'string' && /^[a-z]{6}$/i.test(fresh.word)) word = fresh.word.toLowerCase(); } catch (error) { console.error('Groq word generation failed:', error?.message || String(error)); }
+    let hint = 'A common six-letter English word.';
+    try {
+      const fresh = await generateGameContent(env, 'word', cmd.arg || 'mixed');
+      if (typeof fresh?.word === 'string' && /^[a-z]{6}$/i.test(fresh.word)) {
+        word = fresh.word.toLowerCase();
+        hint = typeof fresh.hint === 'string' ? fresh.hint : hint;
+      }
+    } catch (error) { console.error('Groq word generation failed:', error?.message || String(error)); }
     const id = Date.now().toString(36);
-    const session = { id, type: 'word', word, attempts: 5, expires: Date.now() + 180000 };
+    const session = { id, type: 'word', word, hint, topic: String(cmd.arg || 'mixed').slice(0, 50), attempts: 5, expires: Date.now() + 180000 };
     await kvPut(env, key(chatId), session, 180);
-    return send(env, chatId, '🔤 <b>Word Guess</b>\n\nGuess the 6-letter hidden word. You have 5 tries.\nSend your guess as a normal message in this group.');
+    return send(env, chatId, '🔤 <b>AI Word Guess</b> · ' + esc(cmd.arg || 'mixed') + '\n\n🧩 Hint: ' + esc(hint) + '\nGuess the 6-letter hidden word. You have 5 tries.\nSend your guess as a normal message in this group.');
   }
   if (name === 'dice') {
     const result = await tg(env, 'sendDice', { chat_id: chatId, emoji: '🎲', reply_to_message_id: msg.message_id });
@@ -157,7 +168,7 @@ export async function handleGameMessage(env, msg) {
   session.attempts -= 1;
   if (session.attempts <= 0) {
     await kvDel(env, key(chatId));
-    await send(env, chatId, '⌛ Game over! The word was <b>' + session.word + '</b>.');
+    await send(env, chatId, '⌛ Game over! The word was <b>' + esc(session.word) + '</b>.');
   } else {
     await kvPut(env, key(chatId), session, Math.max(1, Math.ceil((session.expires-Date.now())/1000)));
     await send(env, chatId, '❌ Not that word. ' + session.attempts + ' tries left.');
