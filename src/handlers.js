@@ -569,7 +569,13 @@ export async function setupCommands(env) {
     { command: 'leaderboard', description: 'Top 10 group' },
     { command: 'help', description: 'Help' },
     { command: 'welcome', description: 'Admin: toggle welcome messages' },
+    { command: 'setwelcome', description: 'Admin: customize welcome text' },
+    { command: 'delwelcome', description: 'Admin: reset welcome message' },
+    { command: 'save', description: 'Admin: save a keyword reply' },
+    { command: 'stop', description: 'Admin: remove a keyword reply' },
     { command: 'filters', description: 'Admin: list keyword filters' },
+    { command: 'ban', description: 'Admin: ban a replied-to member' },
+    { command: 'unban', description: 'Admin: unban a replied-to member' },
   ];
 
   const groupAdmins = [
