@@ -5,7 +5,7 @@ import { q } from './db.js';
 import { tg, tgForm } from './telegram.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
-const CHAT_MODEL = 'llama-3.3-70b-versatile';
+const CHAT_MODEL = 'qwen/qwen3.8-27b';
 const VOICE_MODEL = 'whisper-large-v3-turbo';
 let schemaReady = false;
 let schemaPromise = null;
@@ -49,7 +49,7 @@ async function groqChat(env, userId, input) {
   const key=groqKey(env); if(!key) return 'Piko AI is not configured yet. Add GROQ_API_KEY as a Cloudflare secret.';
   const h=await q(env,'SELECT role,content FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 8',[userId]);
   const messages=[{role:'system',content:'You are Piko, a friendly, helpful and playful assistant. Keep replies concise, respectful and safe. You can understand English, Hindi and Kannada. Do not insult, bully, or provide dangerous instructions.'},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
-  const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_tokens:350,temperature:0.7})});
+  const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_completion_tokens:350,temperature:0.7})});
   const data=await res.json(); if(!res.ok) throw new Error(data.error?.message||'Groq request failed');
   const answer=String(data.choices?.[0]?.message?.content||'I could not generate a reply.').slice(0,4000);
   await q(env,'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)',[userId,'user',input.slice(0,4000),Date.now()]);
@@ -236,7 +236,7 @@ export async function handlePikoAI(msg,env){
   if(await banned(env,msg.from.id))return true;
   await profile(env,msg.from);
   try{const answer=await groqChat(env,msg.from.id,msg.text);await reply(env,msg.chat.id,esc(answer));}
-  catch(e){await reply(env,msg.chat.id,'Piko AI is temporarily unavailable. Please try again later.');}
+  catch(e){console.error('Piko AI request failed:',e?.message||String(e));await reply(env,msg.chat.id,'Piko AI is temporarily unavailable. Please try again later.');}
   return true;
 }
 
