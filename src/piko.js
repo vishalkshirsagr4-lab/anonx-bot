@@ -7,6 +7,8 @@ import { tg, tgForm } from './telegram.js';
 const GROQ_URL = 'https://api.groq.com/openai/v1';
 const CHAT_MODEL = 'llama-3.3-70b-versatile';
 const VOICE_MODEL = 'whisper-large-v3-turbo';
+let schemaReady = false;
+let schemaPromise = null;
 
 const esc = value => String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const mention = user => user.username ? '@'+esc(user.username) : '<a href="tg://user?id='+Number(user.id)+'">'+esc(user.first_name || 'User')+'</a>';
@@ -15,6 +17,9 @@ const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
 const groqKey = env => env?.GROQ_API_KEY || '';
 
 async function ensureSchema(env) {
+  if (schemaReady) return;
+  if (schemaPromise) return schemaPromise;
+  schemaPromise = (async () => {
   const statements = [
     `CREATE TABLE IF NOT EXISTS piko_profiles (user_id INTEGER PRIMARY KEY, credits INTEGER NOT NULL DEFAULT 30, daily_at INTEGER, work_at INTEGER, crime_at INTEGER, rob_at INTEGER, warnings INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS piko_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL)`,
@@ -24,6 +29,9 @@ async function ensureSchema(env) {
     `CREATE TABLE IF NOT EXISTS piko_bans (user_id INTEGER PRIMARY KEY, reason TEXT, created_at INTEGER NOT NULL)`
   ];
   for (const sql of statements) await q(env, sql);
+  schemaReady = true;
+  })().catch(error => { schemaPromise = null; throw error; });
+  return schemaPromise;
 }
 
 async function profile(env, user) {
@@ -214,12 +222,17 @@ export async function handlePikoDM(msg,env,cmd){
     if(['ship','roll','trivia','hug','slap','punch','kick'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
     if(['admin','stats','addcredits','addcoins','gban','ungban'].includes(cmd.name)){await adminCommand(env,msg,cmd);return true;}
   }
-  if(!cmd&&msg.text&&msg.chat.type==='private'){
-    await profile(env,msg.from);
-    try{const answer=await groqChat(env,msg.from.id,msg.text);return reply(env,msg.chat.id,esc(answer));}
-    catch(e){return reply(env,msg.chat.id,'Piko AI is temporarily unavailable. Please try again later.');}
-  }
   return false;
+}
+
+export async function handlePikoAI(msg,env){
+  if(!msg.text||msg.chat.type!=='private'||msg.from?.is_bot)return false;
+  await ensureSchema(env);
+  if(await banned(env,msg.from.id))return true;
+  await profile(env,msg.from);
+  try{const answer=await groqChat(env,msg.from.id,msg.text);await reply(env,msg.chat.id,esc(answer));}
+  catch(e){await reply(env,msg.chat.id,'Piko AI is temporarily unavailable. Please try again later.');}
+  return true;
 }
 
 export async function handlePikoGroup(msg,env,cmd){
