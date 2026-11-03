@@ -329,7 +329,6 @@ export async function handlePikoGroup(msg,env,cmd){
     // Answer group AI only when Piko is mentioned or a member replies to Piko.
     const botInfo=await getBotInfo(env);
     const username=String(botInfo?.username||'').toLowerCase();
-    const username=String(botInfo?.username||'').toLowerCase();
     const botName=String(state.BOT_NAME||'Piko').trim().toLowerCase();
     const lowerText=msg.text.toLowerCase();
     const words=lowerText.split(/[^a-z0-9_]+/);
