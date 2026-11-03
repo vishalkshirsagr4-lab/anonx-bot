@@ -21,6 +21,7 @@ import {
   botIdentity
 } from './helpers.js';
 import { detectMedia, validateSubmissionForMode, formatMediaBadge } from './media.js';
+import { handlePikoDM, handlePikoGroup } from './piko.js';
 
 // ────────────────────────────────────────────────────────────
 // UPDATE ENTRY
@@ -65,6 +66,7 @@ async function handleGroupMessage(msg, env) {
   }
 
   const cmd = parseCommand(msg.text || '');
+  if (await handlePikoGroup(msg, env, cmd)) return;
   if (!cmd) return handleGameMessage(env, msg);
   if (cmd.bot) {
     const bi = await getBotInfo(env);
@@ -140,6 +142,7 @@ async function handleDM(msg, env, ctx) {
   ]);
 
   const cmd = parseCommand(text);
+  if (await handlePikoDM(msg, env, cmd)) return;
 
   // deldb keypad state — numeric typed messages
   const deldbMode = await kvGet(env, `deldb:${userId}`);
@@ -492,6 +495,13 @@ export async function setupCommands(env) {
     { command: 'reveal', description: 'Reveal while replying' },
     { command: 'claim', description: 'Daily coins' },
     { command: 'wallet', description: 'Coin balance' },
+    { command: 'credits', description: 'Piko credits and coins' },
+    { command: 'daily', description: 'Earn daily coins' },
+    { command: 'work', description: 'Earn coins' },
+    { command: 'crime', description: 'Play a fictional coin challenge' },
+    { command: 'img', description: 'Generate an AI image' },
+    { command: 'trivia', description: 'Play trivia' },
+    { command: 'roll', description: 'Roll a dice' },
     { command: 'leaderboard', description: 'Top 10' },
     { command: 'submit', description: 'Submit contest entry' },
     { command: 'contest', description: 'Contest status' },
@@ -529,6 +539,8 @@ export async function setupCommands(env) {
     { command: 'hunt', description: 'Find hidden treasure' },
     { command: 'leaderboard', description: 'Top 10 group' },
     { command: 'help', description: 'Help' },
+    { command: 'welcome', description: 'Admin: toggle welcome messages' },
+    { command: 'filters', description: 'Admin: list keyword filters' },
   ];
 
   const groupAdmins = [
