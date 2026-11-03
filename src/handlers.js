@@ -83,7 +83,7 @@ async function handleGroupMessage(msg, env) {
   }
 
   if (cmd.name === 'myid') return send(env, chatId, '🆔 Your Telegram user ID: <code>' + msg.from.id + '</code>');
-  if (['game', 'quiz', 'rps', 'word', 'riddle', 'dice', 'emoji', 'hunt'].includes(cmd.name)) return handleGameCommand(env, msg, cmd);
+  if (['game', 'quiz', 'trivia', 'rps', 'word', 'riddle', 'dice', 'emoji', 'hunt'].includes(cmd.name)) return handleGameCommand(env, msg, cmd);
   if (cmd.name === 'start') return groupStart(env, msg);
   if (cmd.name === 'help') return groupHelp(env, msg);
   if (cmd.name === 'setting') {
