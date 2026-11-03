@@ -337,7 +337,7 @@ export async function handlePikoGroup(msg,env,cmd){
       if(entity.type!=='mention')return false;
       return text.slice(entity.offset,entity.offset+entity.length).toLowerCase()==='@'+username;
     });
-    const nameMention=!!botName&&lowerText.split(/[^\\p{L}\\p{N}_]+/u).includes(botName);
+    const nameMention=!!botName&&lowerText.split(/[^\p{L}\p{N}_]+/u).includes(botName);
     const replied=msg.reply_to_message?.from;
     const repliedToPiko=!!(replied?.is_bot&&botInfo?.id&&Number(replied.id)===Number(botInfo.id));
     if(usernameMention||nameMention||repliedToPiko){
