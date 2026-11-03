@@ -164,24 +164,31 @@ function findFunTarget(msg) {
 const FUN_MEDIA_COMMANDS=['hug','wave','highfive','cheer','kick','punch','slap'];
 async function sendFunMedia(env,chatId,name,replyTo){
   const items=await kvGet(env,'piko_media:'+name,true);
-  if(!Array.isArray(items)||!items.length||!Number.isInteger(replyTo)||replyTo<=0)return false;
-  const item=items[rand(0,items.length-1)];
+  if(!Array.isArray(items)||!items.length||!Number.isInteger(replyTo)||replyTo<=0){
+    console.error('Piko fun media unavailable:',{name,replyTo,reason:!Array.isArray(items)||!items.length?'empty media pack':'invalid reply target'});
+    return false;
+  }
+  const valid=items.filter(item=>item&&typeof item.file_id==='string'&&item.file_id&&['sticker','animation'].includes(item.type));
+  if(!valid.length){
+    console.error('Piko fun media pack has no valid Telegram file IDs:',{name,count:items.length});
+    return false;
+  }
+  const item=valid[rand(0,valid.length-1)];
   const method=item.type==='animation'?'sendAnimation':'sendSticker';
   const mediaField=item.type==='animation'?'animation':'sticker';
-  // Require Telegram to reply to the exact original message. Never send unthreaded media.
+  // Telegram reply_parameters explicitly binds the sticker/GIF to the
+  // exact message that the command author replied to.
   const result=await tg(env,method,{
     chat_id:chatId,
     [mediaField]:item.file_id,
-    // Use Telegram's standard reply field with the exact replied-to message ID.
-    reply_to_message_id:replyTo,
-    allow_sending_without_reply:false
+    reply_parameters:{message_id:replyTo,allow_sending_without_reply:false}
   });
   if(!result?.ok){
     console.error('Piko fun media send failed:',{name,method,replyTo,error_code:result?.error_code,description:result?.description});
     return false;
   }
   const actualReplyId=result.result?.reply_to_message?.message_id;
-  if(actualReplyId!==undefined&&actualReplyId!==replyTo){
+  if(actualReplyId!==replyTo){
     console.error('Piko fun media reply mismatch:',{name,replyTo,actualReplyId});
     return false;
   }
