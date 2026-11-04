@@ -246,10 +246,13 @@ function musicAuthorized(value) {
 }
 
 function mediaPayloadUrl(payload, kind) {
-  const candidates = [payload, payload?.data, payload?.result, payload?.media, payload?.data?.media].filter(Boolean);
+  const candidates = [payload, payload?.data, payload?.result, payload?.media,
+                      payload?.data?.media, payload?.result?.media].filter(Boolean);
   const keys = kind === 'audio'
-    ? ['audio_url','stream_url','media_url','download_url','file_url','url']
-    : ['video_url','stream_url','media_url','download_url','file_url','url'];
+    ? ['audio_url','audio','stream_url','stream','media_url','media',
+       'download_url','download_link','downloadLink','file_url','file','url','link']
+    : ['video_url','video','stream_url','stream','media_url','media',
+       'download_url','download_link','downloadLink','file_url','file','url','link'];
   for (const candidate of candidates) {
     for (const key of keys) {
       const raw = candidate?.[key];
@@ -263,6 +266,8 @@ function mediaPayloadUrl(payload, kind) {
   }
   return '';
 }
+
+
 async function fetchNazriyaJson(url) {
   const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
   const payload = await response.json();
