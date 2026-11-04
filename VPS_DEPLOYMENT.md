@@ -48,8 +48,9 @@ pip install -r requirements.txt
 
 - Add the signed-in user account to the target group and start a group voice chat/video chat.
 - If the group limits voice chat participation, ask an admin to grant the account the permissions needed to join and speak. The bot cannot start a voice chat by itself.
-- Put `API_ID`, `API_HASH`, and `STRING_SESSION` in `.env`. Set `NAZRIYA_API_KEY` only if your Nazriya API deployment requires the key. The base URL defaults to `https://nazriya.teamgod.online`.
-- The audio/video endpoints must return a media response or JSON containing a direct media URL. Media is downloaded locally and passed to FFmpeg through PyTgCalls.
+- Put `API_ID`, `API_HASH`, `STRING_SESSION`, and `NAZRIYA_API_KEY` in `.env`. Use `NAZRIYA_API_BASE=https://nazriya.teamgod.online/api`; the application also normalizes a base URL without `/api`.
+- The player calls the existing `/api/search`, `/api/audio`, and `/api/video` endpoints. Audio/video endpoints must return a media response or JSON containing a direct HTTPS media URL. The player checks that the downloaded response is an audio/video or binary media stream before passing it to FFmpeg through PyTgCalls.
+- Only stream media you have permission to play. The player does not bypass DRM, paywalls, access controls, or copyright restrictions.
 
 ## 4. Run and check logs
 
