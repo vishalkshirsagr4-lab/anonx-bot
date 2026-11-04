@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: piko-group-call-player
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: PLAYER_API_SECRET
+        sync: false
+      - key: TG_API_ID
+        sync: false
+      - key: TG_API_HASH
+        sync: false
+      - key: TG_SESSION_STRING
+        sync: false
+      - key: NAZRIYA_API_KEY
+        sync: false
