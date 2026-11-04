@@ -31,8 +31,11 @@ export async function handleUpdate(update, env, ctx) {
     const chat = update.my_chat_member.chat;
     const status = update.my_chat_member.new_chat_member.status;
     if (chat.type === 'private') return;
-    if (['member', 'administrator', 'creator'].includes(status)) await upsertGroup(env, chat);
-    else if (status === 'left' || status === 'kicked')
+    if (['member', 'administrator', 'creator'].includes(status)) {
+      await upsertGroup(env, chat);
+      // Refresh group command suggestions immediately when the bot is added or promoted.
+      await setupCommands(env);
+    } else if (status === 'left' || status === 'kicked')
       await q(env, `DELETE FROM groups WHERE chat_id = ?`, [String(chat.id)]);
     return;
   }
@@ -543,6 +546,16 @@ export async function setupCommands(env) {
   ];
 
   const group = [
+    // Keep games at the top so Telegram shows them prominently in the group command menu.
+    { command: 'game', description: 'Open the Game Center' },
+    { command: 'quiz', description: 'Start a quick AI quiz' },
+    { command: 'trivia', description: 'Start an AI trivia game' },
+    { command: 'rps', description: 'Play group Rock Paper Scissors' },
+    { command: 'word', description: 'Guess the hidden word' },
+    { command: 'riddle', description: 'Solve an AI riddle' },
+    { command: 'emoji', description: 'Play the emoji guessing game' },
+    { command: 'hunt', description: 'Find hidden treasure in one try' },
+    { command: 'dice', description: 'Roll the dice' },
     { command: 'start', description: 'Bot info and refresh commands' },
     { command: 'help', description: 'Group help' },
     { command: 'myid', description: 'Show your Telegram ID' },
@@ -572,15 +585,6 @@ export async function setupCommands(env) {
     { command: 'slap', description: 'Playful sticker (reply to a message)' },
     { command: 'punch', description: 'Playful sticker (reply to a message)' },
     { command: 'kick', description: 'Playful sticker (reply to a message)' },
-    { command: 'game', description: 'Open the Game Center' },
-    { command: 'quiz', description: 'Fresh AI quiz (try anime or genz)' },
-    { command: 'trivia', description: 'Fresh AI trivia (try anime or genz)' },
-    { command: 'rps', description: 'Rock paper scissors' },
-    { command: 'word', description: 'Guess a fresh hidden word' },
-    { command: 'riddle', description: 'Fresh AI riddle (try anime or genz)' },
-    { command: 'dice', description: 'Roll the dice' },
-    { command: 'emoji', description: 'Fresh AI emoji challenge' },
-    { command: 'hunt', description: 'Find hidden treasure' },
     { command: 'leaderboard', description: 'Top 10 group' },
   ];
 
