@@ -65,9 +65,15 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
   }
   if (!item && type === 'emoji') {
     const normalize = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    const available = EMOJI_FALLBACK.filter(candidate =>
+    // Prefer never-used questions; when the small local bank is exhausted,
+    // allow older questions again while avoiding the three most recent ones.
+    let available = EMOJI_FALLBACK.filter(candidate =>
       !used.some(previous => normalize(previous) === normalize(candidate.q))
     );
+    if (!available.length) {
+      const recentFew = used.slice(-3).map(normalize);
+      available = EMOJI_FALLBACK.filter(candidate => !recentFew.includes(normalize(candidate.q)));
+    }
     if (available.length) item = available[Math.floor(Math.random() * available.length)];
   }
   if (!item) {
