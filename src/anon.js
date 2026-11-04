@@ -4,7 +4,7 @@ import { tg } from './telegram.js';
 import { q } from './db.js';
 import { genId, esc, getBotInfo } from './helpers.js';
 
-export async function sendAnonMessage(env, userId, sourceMsg, targetChatId, replyToMsgId, threadData, textContent) {
+export async function sendAnonMessage(env, userId, sourceMsg, targetChatId, replyToMsgId, threadData, textContent, targetThreadId = null) {
   let userAnonNum = threadData.users[userId];
   if (!userAnonNum) {
     userAnonNum = state.ANON_SHUFFLE_MODE
@@ -23,7 +23,7 @@ export async function sendAnonMessage(env, userId, sourceMsg, targetChatId, repl
       url: `https://t.me/${botInfo.username}?start=reply_${postId}`
     }]]
   };
-  const reply = replyToMsgId ? { reply_to_message_id: replyToMsgId } : {};
+  const reply = replyToMsgId ? { reply_to_message_id: replyToMsgId, ...(targetThreadId ? { message_thread_id: targetThreadId } : {}) } : (targetThreadId ? { message_thread_id: targetThreadId } : {});
   let sentMsg;
 
   if (sourceMsg.photo || sourceMsg.video || sourceMsg.document ||
