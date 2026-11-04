@@ -38,3 +38,7 @@ Add Piko to your group and grant only the permissions it needs. Group admins can
 ## Security
 
 Never commit bot tokens, API keys, database URLs or database auth tokens. Rotate any credential that has appeared in a public commit; deleting it from the latest file does not erase it from Git history.
+
+## VPS voice chat streaming
+
+The Worker music commands do not stream into Telegram voice chats. For real-time group voice/video chat playback, use the separate Python user-account deployment in [VPS_DEPLOYMENT.md](./VPS_DEPLOYMENT.md), with [main.py](./main.py), [requirements.txt](./requirements.txt), and [generate_string_session.py](./generate_string_session.py). That service requires Linux, FFmpeg, `API_ID`, `API_HASH`, and a Pyrogram `STRING_SESSION`; it does not use a Bot Token.
