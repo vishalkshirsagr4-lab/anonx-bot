@@ -38,6 +38,7 @@ jobs:
             OWNER_ID
             OWNER_IDS
             GROQ_API_KEY
+            DELDB_PASSWORD
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
@@ -47,3 +48,4 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           OWNER_IDS: ${{ secrets.OWNER_IDS || secrets.OWNER_ID }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          DELDB_PASSWORD: ${{ secrets.DELDB_PASSWORD }}
