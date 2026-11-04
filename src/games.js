@@ -328,12 +328,20 @@ export async function handleGameCallback(env, cq, data) {
     const session = await kvGet(env, 'game:hunt:' + chatId + ':' + match[1], true);
     if (!session || session.found) return { toast: 'The hunt has ended.', alert: true };
     const spot = Number(match[2]);
-    if (spot !== session.hidden) return { toast: 'Nothing here. Try another spot!', alert: false };
     const huntKey = 'game:hunt:' + chatId + ':' + match[1];
-    if (!(await claimSession(env, huntKey, session, { ...session, found: true }))) return { toast: 'Someone found it first!', alert: false };
+    // The first tap consumes the hunt, whether the selected spot is right or wrong.
+    if (!(await claimSession(env, huntKey, session, { ...session, found: true, ended: true, player: userId }))) {
+      return { toast: 'This hunt has already ended.', alert: true };
+    }
     await kvDel(env, key(chatId));
+    if (spot !== session.hidden) {
+      const cells = ['🌳','🪨','📦','🌲','🏕️','🧰','🪵','🌿','🗺️'];
+      await editCq(env, cq, '❌ <b>Hunt over!</b>\\n' + esc(cq.from.first_name || 'Player') +
+        ' used their one try, but found nothing.\\n\\nThe treasure was hidden under ' + cells[session.hidden] + '.');
+      return { toast: 'Wrong spot. Hunt over!', alert: true };
+    }
     await addCoins(env, userId, 20);
-    await editCq(env, cq, '💎 <b>Treasure found!</b>\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙!');
+    await editCq(env, cq, '💎 <b>Treasure found!</b>\\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙!');
     return { toast: 'Treasure found! +20 coins' };
   }
   return null;
