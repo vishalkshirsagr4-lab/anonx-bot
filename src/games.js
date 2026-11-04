@@ -351,23 +351,18 @@ export async function handleGameCallback(env, cq, data) {
     return { toast: 'Group round finished!' };
   }
   if ((match = data.match(/^gh_([a-z0-9]+)_([0-8])$/))) {
-    const session = await kvGet(env, 'game:hunt:' + chatId + ':' + match[1], true);
-    if (!session || session.found) return { toast: 'The hunt has ended.', alert: true };
-    const spot = Number(match[2]);
     const huntKey = 'game:hunt:' + chatId + ':' + match[1];
-    // The first tap consumes the hunt, whether the selected spot is right or wrong.
-    if (!(await claimSession(env, huntKey, session, { ...session, found: true, ended: true, player: userId }))) {
-      return { toast: 'This hunt has already ended.', alert: true };
-    }
+    const session = await kvGet(env, huntKey, true);
+    if (!session || session.expires <= Date.now() || session.found) return { toast: 'This hunt has ended.', alert: true };
+    const spot = Number(match[2]);
+    const recorded = await q(env, 'INSERT OR IGNORE INTO game_answers(chat_id,game_id,user_id,choice,answered_at) VALUES(?,?,?,?,?)', [chatId, session.id, userId, spot, Date.now()]);
+    if (recorded.rowsAffected !== 1) return { toast: 'You have already searched once. Let other members try!', alert: true };
+    if (spot !== session.hidden) return { toast: 'No treasure here! Your one try is used. Other members can still search.', alert: false };
+    const claimed = await claimSession(env, huntKey, session, { ...session, found: true, winner: userId });
+    if (!claimed) return { toast: 'Another member found the treasure first!', alert: true };
     await kvDel(env, key(chatId));
-    if (spot !== session.hidden) {
-      const cells = ['🌳','🪨','📦','🌲','🏕️','🧰','🪵','🌿','🗺️'];
-      await editCq(env, cq, '❌ <b>Hunt over!</b>\n' + esc(cq.from.first_name || 'Player') +
-        ' used their one try, but found nothing.\n\nThe treasure was hidden under ' + cells[session.hidden] + '.');
-      return { toast: 'Wrong spot. Hunt over!', alert: true };
-    }
     await addCoins(env, userId, 20);
-    await editCq(env, cq, '💎 <b>Treasure found!</b>\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙!');
+    await editCq(env, cq, '💎 <b>Treasure found!</b>\\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙! The hunt is complete.');
     return { toast: 'Treasure found! +20 coins' };
   }
   return null;
