@@ -619,7 +619,6 @@ export async function setupCommands(env) {
     { command: 'queue', description: 'Show music queue' },
     { command: 'volume', description: 'Set player volume (0-100)' },
     { command: 'leave', description: 'Leave the group call' },
-    { command: 'stopfilter', description: 'Remove a keyword filter' },
     { command: 'leaderboard', description: 'Top 10 group' },
   ];
 
@@ -627,6 +626,7 @@ export async function setupCommands(env) {
     ...group,
     { command: 'welcome', description: 'Admin: toggle welcome messages' },
     { command: 'setwelcome', description: 'Admin: customize welcome text' },
+    { command: 'stopfilter', description: 'Admin: remove a keyword filter' },
     { command: 'delwelcome', description: 'Admin: reset welcome message' },
     { command: 'save', description: 'Admin: save a keyword reply' },
     { command: 'stop', description: 'Admin: remove a keyword reply' },
