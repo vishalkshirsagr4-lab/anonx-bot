@@ -288,29 +288,59 @@ async function sendNazriyaMedia(env, msg, query, kind) {
   endpoint.searchParams.set('q', String(query || '').trim().slice(0, 120));
   endpoint.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
 
-  let payload;
+  let response;
   try {
-    payload = await fetchNazriyaJson(endpoint.toString());
+    response = await fetch(endpoint.toString(), { signal: AbortSignal.timeout(60000) });
   } catch (e) {
     console.error('[nazriya] fetch failed:', endpoint.toString(), e.message);
     return { ok: false, reason: 'Media API request failed: ' + e.message };
   }
-  console.log('[nazriya] payload:', JSON.stringify(payload).slice(0, 500));
 
-  const mediaUrl = mediaPayloadUrl(payload, kind);
-  if (!mediaUrl) return { ok: false, reason: 'No direct HTTPS media URL in API response.' };
+  if (!response.ok) {
+    console.error('[nazriya] HTTP error:', response.status, response.statusText);
+    return { ok: false, reason: 'Media API returned HTTP ' + response.status };
+  }
 
-  const mediaResponse = await fetch(mediaUrl, { signal: AbortSignal.timeout(30000) });
-  if (!mediaResponse.ok) return { ok: false, reason: 'Media source HTTP ' + mediaResponse.status };
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  console.log('[nazriya] content-type:', contentType);
 
-  const blob = await mediaResponse.blob();
+  // Two cases:
+  // 1) API returns the media file directly (content-type is audio/* or video/*, or octet-stream for mp4)
+  // 2) API returns JSON with a download URL inside
+  let blob;
+
+  if (contentType.startsWith('audio/') || contentType.startsWith('video/') ||
+      contentType.includes('octet-stream') || contentType.includes('mpegurl')) {
+    blob = await response.blob();
+  } else {
+    // Try JSON: the API might return { url: "..." }
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (e) {
+      // Neither media nor JSON — grab a preview so we can diagnose
+      const text = await response.text().catch(() => '');
+      console.error('[nazriya] unexpected response:', text.slice(0, 300));
+      return { ok: false, reason: 'Unexpected API response (not media, not JSON).' };
+    }
+    console.log('[nazriya] payload:', JSON.stringify(payload).slice(0, 400));
+    const mediaUrl = mediaPayloadUrl(payload, kind);
+    if (!mediaUrl) return { ok: false, reason: 'No direct HTTPS media URL in API response.' };
+    const mediaResponse = await fetch(mediaUrl, { signal: AbortSignal.timeout(60000) });
+    if (!mediaResponse.ok) return { ok: false, reason: 'Media source HTTP ' + mediaResponse.status };
+    blob = await mediaResponse.blob();
+  }
+
   if (!blob.size) return { ok: false, reason: 'Empty media file.' };
-  if (blob.size > 45 * 1024 * 1024) return { ok: false, reason: 'File exceeds 45 MB Telegram upload limit.' };
+  if (blob.size > 45 * 1024 * 1024) {
+    return { ok: false, reason: 'File is ' + (blob.size / 1024 / 1024).toFixed(1) + ' MB, exceeds 45 MB Telegram limit.' };
+  }
 
   const title = String(query || 'Piko music').slice(0, 900);
   const method = kind === 'audio' ? 'sendAudio' : 'sendVideo';
   const field = kind === 'audio' ? 'audio' : 'video';
-  const ext = kind === 'audio' ? 'mp3' : 'mp4';
+  // Use .mp4 for both — Telegram accepts mp4 container for audio when the file is actually mp4
+  const ext = blob.type === 'audio/mpeg' || contentType.startsWith('audio/') ? 'mp3' : 'mp4';
 
   const sent = await tgForm(env, method, {
     chat_id: msg.chat.id,
@@ -325,6 +355,7 @@ async function sendNazriyaMedia(env, msg, query, kind) {
   }
   return { ok: true };
 }
+
 
 async function musicSearchCommand(env, msg, cmd) {
   const query = String(cmd.arg || '').trim().slice(0, 120);
