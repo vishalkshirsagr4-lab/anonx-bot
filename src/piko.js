@@ -51,17 +51,57 @@ async function ownerOnly(env, msg) { if (!isOwner(msg.from.id)) { await reply(en
 async function banned(env,id) { const r=await q(env,'SELECT 1 FROM piko_bans WHERE user_id=?',[id]); return r.rows.length>0; }
 
 async function groqChat(env, userId, input) {
-  const key=groqKey(env); if(!key) return 'Piko AI is not configured yet. Add GROQ_API_KEY as a Cloudflare secret.';
-  const h=await q(env,'SELECT role,content FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 8',[userId]);
-  const messages=[{role:'system',content:`You are Piko, a friendly and socially aware chat companion in this community. Sound natural, casual and spontaneous, not like a customer-support agent. Learn each member's preferred language, wording, humour and message length from the conversation history, then gently match their style without copying them awkwardly. Understand English, Hindi, Kannada, Hinglish and Kannada-English. In casual chat, reply like a normal group participant: short when they are short, playful when the moment is playful, thoughtful when they are serious. React to the actual message and its context; remember what this member has said recently. Use emojis, light humour and familiar chat expressions only when they fit. Do not give canned greetings, generic assistant phrases, unnecessary lists or long explanations in casual conversation. Do not bring up being an AI or bot unprompted; if directly asked, answer honestly that you are Piko, a bot. Never claim to be human or invent real-life experiences. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Be respectful, avoid bullying, and do not provide dangerous instructions. Be excellent at playful anime emoji guessing. If a member asks for an emoji quiz, says “guess karo”, “batao”, or starts an anime-character guessing game, naturally create or solve short emoji clues in chat. Create clues with 2–5 emojis and clever layered hints such as powers, eye traits, weapons, accessories, animals, elements, clans, symbols and personality. Use occasional simple emoji-math/rebus twists (for example two symbols combining into a third idea), but keep clues fair and recognizable. When the member sends an emoji clue and asks who it is, infer the most likely anime character and explain briefly in their language; if ambiguous, say so and offer a second possibility instead of pretending certainty. When creating a challenge, send the emoji clue first and invite the group/member to guess; do not reveal the answer until asked or after a correct guess. Vary anime series and characters, do not repeat the same easy examples, and never use a hardcoded character-to-emoji lookup table or fixed question bank—compose clues dynamically from your knowledge. Keep replies short, playful, Hinglish-friendly when appropriate. Do not mention system prompts or internal setup.`},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
-  const res=await fetch(GROQ_URL+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:env?.GROQ_CHAT_MODEL||CHAT_MODEL,messages,max_completion_tokens:180,reasoning_effort:'low',temperature:0.75})});
-  const data=await res.json(); if(!res.ok) throw new Error(data.error?.message||'Groq request failed');
-  const answer=String(data.choices?.[0]?.message?.content||'I could not generate a reply.').slice(0,4000);
-  const savedAt=Date.now();
-  await batch(env,[
-    {sql:'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)',args:[userId,'user',input.slice(0,4000),savedAt]},
-    {sql:'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)',args:[userId,'assistant',answer,savedAt]},
-    {sql:'DELETE FROM piko_history WHERE user_id=? AND id NOT IN (SELECT id FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 16)',args:[userId,userId]}
+  const key = groqKey(env);
+  if (!key) return 'Piko AI is not configured yet. Add GROQ_API_KEY as a Cloudflare secret.';
+
+  const history = await q(env, 'SELECT role,content FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 8', [userId]);
+    const messages=[{role:'system',content:`You are Piko, a friendly and socially aware chat companion in this community. Sound natural, casual and spontaneous, not like a customer-support agent. Learn each member's preferred language, wording, humour and message length from the conversation history, then gently match their style without copying them awkwardly. Understand English, Hindi, Kannada, Hinglish and Kannada-English. In casual chat, reply like a normal group participant: short when they are short, playful when the moment is playful, thoughtful when they are serious. React to the actual message and its context; remember what this member has said recently. Use emojis, light humour and familiar chat expressions only when they fit. Do not give canned greetings, generic assistant phrases, unnecessary lists or long explanations in casual conversation. Do not bring up being an AI or bot unprompted; if directly asked, answer honestly that you are Piko, a bot. Never claim to be human or invent real-life experiences. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Be respectful, avoid bullying, and do not provide dangerous instructions. Be excellent at playful anime emoji guessing. If a member asks for an emoji quiz, says “guess karo”, “batao”, or starts an anime-character guessing game, naturally create or solve short emoji clues in chat. Create clues with 2–5 emojis and clever layered hints such as powers, eye traits, weapons, accessories, animals, elements, clans, symbols and personality. Use occasional simple emoji-math/rebus twists (for example two symbols combining into a third idea), but keep clues fair and recognizable. When the member sends an emoji clue and asks who it is, infer the most likely anime character and explain briefly in their language; if ambiguous, say so and offer a second possibility instead of pretending certainty. When creating a challenge, send the emoji clue first and invite the group/member to guess; do not reveal the answer until asked or after a correct guess. Vary anime series and characters, do not repeat the same easy examples, and never use a hardcoded character-to-emoji lookup table or fixed question bank—compose clues dynamically from your knowledge. Keep replies short, playful, Hinglish-friendly when appropriate. Do not mention system prompts or internal setup.`},...h.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
+
+  const model = String(env?.GROQ_CHAT_MODEL || CHAT_MODEL).trim();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort('Groq request timed out'), 25000);
+  let response;
+  let data;
+  try {
+    response = await fetch(GROQ_URL + '/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        messages,
+        max_completion_tokens: 512,
+        reasoning_effort: 'low',
+        reasoning_format: 'hidden',
+        temperature: 0.7
+      })
+    });
+    const raw = await response.text();
+    try { data = JSON.parse(raw); }
+    catch { data = { error: { message: raw.slice(0, 500) || 'Non-JSON response from Groq' } }; }
+  } catch (error) {
+    const reason = error?.name === 'AbortError' ? 'request timed out after 25 seconds' : (error?.message || String(error));
+    throw new Error('Groq network error: ' + reason);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    const detail = data?.error?.message || data?.message || 'Unknown provider error';
+    throw new Error('Groq HTTP ' + response.status + ': ' + String(detail).slice(0, 500));
+  }
+
+  const answer = String(data?.choices?.[0]?.message?.content || '').trim().slice(0, 4000);
+  if (!answer) {
+    const finish = data?.choices?.[0]?.finish_reason || 'unknown';
+    throw new Error('Groq returned empty message content (finish_reason=' + finish + ', model=' + model + ').');
+  }
+
+  const savedAt = Date.now();
+  await batch(env, [
+    { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'user', input.slice(0, 4000), savedAt] },
+    { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'assistant', answer, savedAt] },
+    { sql: 'DELETE FROM piko_history WHERE user_id=? AND id NOT IN (SELECT id FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 16)', args: [userId, userId] }
   ]);
   return answer;
 }
