@@ -214,7 +214,7 @@ export async function handleGameCallback(env, cq, data) {
     await kvDel(env, key(chatId));
     if (choice === session.answer) {
       await addCoins(env, userId, 15);
-      await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\\n\\n' + esc(session.question));
+      await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' + esc(session.question));
       return { toast: 'Correct! +15 coins' };
     }
     const correct = session.choices?.[session.answer] || 'the correct option';
