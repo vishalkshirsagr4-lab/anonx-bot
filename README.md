@@ -25,7 +25,6 @@ Keep all credentials out of source files. Configure these as GitHub Actions secr
 - `TURSO_DB_URL`
 - `TURSO_AUTH_TOKEN`
 - `OWNER_ID` (and optionally `OWNER_IDS`)
-- `DELDB_PASSWORD` — optional 4–20 digit password for the owner-only database wipe command; no public default is used
 
 Optional:
 - `GROQ_API_KEY` — enables AI chat and voice transcription. Without it, those features explain that setup is required.
