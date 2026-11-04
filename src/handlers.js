@@ -120,10 +120,10 @@ async function groupStart(env, msg) {
   await setupCommands(env);
   const id = await botIdentity(env);
   const spec = await botProfileSpec(env, id);
-  const caption = `🤖 <b>${esc(state.BOT_NAME)}</b>\n\nUsername: @${esc(id.botUsername)}\nOwner: ${id.ownerName ? esc(id.ownerName) : '—'}\n\nUse the buttons below:`;
+  const caption = `Hello ${userLink(msg.from.id, msg.from.first_name)} 👋\n\nI am <b>${esc(state.BOT_NAME)}</b> — your AI and community bot. Chat with Piko, use group tools, post anonymously and join contests.\n\nSelect an option below:`;
   const markup = { inline_keyboard: [
-    [{ text: '🏓 Ping Test', callback_data: 'ping_test' }],
-    [{ text: '📚 Help', callback_data: 'group_help' }]
+    [{ text: '❓ Help & Commands', callback_data: 'help_main_start' }],
+    [{ text: '👨‍💻 Developer', url: `tg://user?id=${state.OWNER_ID}` }, { text: '🆘 Support', url: state.SUPPORT_GROUP }]
   ] };
   const photo = await tg(env, 'sendPhoto', {
     chat_id: chatId,
