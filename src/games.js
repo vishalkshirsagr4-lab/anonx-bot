@@ -42,10 +42,8 @@ const buttons = (gameId, items, prefix) => ({
 });
 
 async function startChoiceGame(env, chatId, from, type, topic = '') {
-  const old = await kvGet(env, key(chatId), true);
-  if (old && old.expires > Date.now() && !old.winner && old.status !== 'done') {
-    return send(env, chatId, '🎮 A game is already running here. Finish it first or wait for it to expire.');
-  }
+  // Starting a new choice game replaces any unfinished game in this chat.
+  // Old inline buttons become invalid because their session ID no longer matches.
   const recentKey = 'game:recent:' + chatId + ':' + type;
   const recent = await kvGet(env, recentKey, true);
   const used = Array.isArray(recent) ? recent : [];
@@ -128,10 +126,7 @@ export async function handleGameCommand(env, msg, cmd) {
     );
   }
   if (name === 'word') {
-    const old = await kvGet(env, key(chatId), true);
-    if (old && old.expires > Date.now() && !old.winner && old.status !== 'done') {
-      return send(env, chatId, '🎮 A game is already running here. Finish it first or wait for it to expire.');
-    }
+    // A new word game replaces any unfinished game in this chat.
     const words = ['planet','garden','puzzle','silver','window','rocket','orange','castle','dragon','mystic','naruto','zenits'];
     let word = pick(words);
     let hint = 'A common six-letter English word.';
@@ -157,8 +152,7 @@ export async function handleGameCommand(env, msg, cmd) {
     return send(env, chatId, '🎲 ' + esc(from.first_name || 'Player') + ' rolled ' + (value || '?') + '. Roll a 6 to win 10 🪙!');
   }
   if (name === 'hunt') {
-    const old = await kvGet(env, key(chatId), true);
-    if (old && old.expires > Date.now()) return send(env, chatId, '🕵️ A group game is already active. Finish it before starting a hunt.');
+    // A new treasure hunt replaces any unfinished game in this chat.
     const id = Date.now().toString(36);
     await kvPut(env, key(chatId), { id, type: 'hunt', expires: Date.now() + 60000, found: false }, 60);
     const cells = ['🌳','🪨','📦','🌲','🏕️','🧰','🪵','🌿','🗺️'];
