@@ -7,7 +7,7 @@
     "dev": "node src/server.js",
     "start": "node src/server.js",
     "build": "node -e \"console.log('Build successful')\"",
-    "lint": "node --check src/*.js test/*.js",
+    "lint": "for file in src/*.js test/*.js; do node --check \"$file\" || exit 1; done",
     "test": "node test/contest-wizard-test.js && node test/media-test.js",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
