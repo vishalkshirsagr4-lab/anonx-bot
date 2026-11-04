@@ -86,9 +86,9 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
         : 'Choose a varied fun topic: anime, gaming, science, pop culture, internet culture, riddles or everyday knowledge.';
   const task = type === 'quiz' ? 'Write one fresh, EASY multiple-choice trivia question suitable for a casual group chat.'
     : type === 'riddle' ? 'Write one very easy, short, original riddle that most people can solve.'
-    : type === 'emoji' ? 'Create one VERY EASY emoji guessing puzzle about a globally famous anime, movie, or video game. Use 3 or 4 iconic emojis that point to ONE specific title or character, not generic elements. Avoid vague clues such as only a dragon, lightning, crown, mushroom, or book. The question must say exactly which category is being guessed (anime, movie, or game). The correct title MUST appear exactly once among the four options; the other three options must be plausible but clearly different famous titles. Never use unrelated emojis. Example clue quality: Guess the movie: 🦁👑🌅 (The Lion King).'
+    : type === 'emoji' ? 'Create one completely ORIGINAL, VERY EASY emoji guessing puzzle about a globally famous anime, movie, or video game. It must be a new puzzle idea and wording, not a paraphrase of any recent-used question. Use 3 or 4 iconic emojis that point to ONE specific title or character, not generic elements. Avoid vague clues such as only a dragon, lightning, crown, mushroom, or book. The question must say exactly which category is being guessed (anime, movie, or game). The correct title MUST appear exactly once among the four options; the other three options must be plausible but clearly different famous titles. Never use unrelated emojis. Example clue quality: Guess the movie: 🦁👑🌅 (The Lion King).'
     : 'Choose one common, easy six-letter English word; do not use names or obscure words.';
-  const avoid = Array.isArray(avoidQuestions) ? avoidQuestions.slice(-30).map(x => String(x).slice(0,180)) : [];
+  const avoid = Array.isArray(avoidQuestions) ? avoidQuestions.slice(-100).map(x => String(x).slice(0,180)) : [];
   const response = await fetch(GROQ_URL + '/chat/completions', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
@@ -96,7 +96,7 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
       model: env?.GROQ_CHAT_MODEL || CHAT_MODEL,
       messages: [
         { role: 'system', content: 'You create ORIGINAL, EASY, beginner-friendly group-game content. Never make a hard, tricky, obscure, academic, or confusing question. Output valid JSON only, no markdown.' },
-        { role: 'user', content: task + ' Theme: ' + theme + ' Requested category: ' + mode + '. Create a different question from every item in this recent-used list. Do not reuse or paraphrase them: ' + JSON.stringify(avoid) + '. Keep wording short and answer choices simple and clearly distinct. ' + schema }
+        { role: 'user', content: task + ' Theme: ' + theme + ' Requested category: ' + mode + '. Create a genuinely new question that is semantically different from every item in this recent-used list. Never reuse, lightly edit, reword, or paraphrase any listed question: ' + JSON.stringify(avoid) + '. Keep wording short and answer choices simple and clearly distinct. ' + schema }
       ],
       temperature: 0.85,
       max_completion_tokens: 700,
