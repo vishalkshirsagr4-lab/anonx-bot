@@ -125,6 +125,16 @@ async function groupStart(env, msg) {
     [{ text: '🏓 Ping Test', callback_data: 'ping_test' }],
     [{ text: '📚 Help', callback_data: 'group_help' }]
   ] };
+  const photo = await tg(env, 'sendPhoto', {
+    chat_id: chatId,
+    photo: 'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/pippo.jpg',
+    caption,
+    parse_mode: 'HTML',
+    reply_markup: markup,
+    reply_to_message_id: msg.message_id
+  });
+  if (photo.ok) return photo;
+  console.error('Group /start photo failed:', photo.description || 'sendPhoto failed');
   return send(env, chatId, caption, { card: spec, reply_markup: markup, reply_to_message_id: msg.message_id });
 }
 
@@ -206,6 +216,15 @@ async function handleDM(msg, env, ctx) {
           [{ text: '❓ Help & Commands', callback_data: 'help_main_start' }],
           [{ text: '👨‍💻 Developer', url: `tg://user?id=${state.OWNER_ID}` }, { text: '🆘 Support', url: state.SUPPORT_GROUP }]
         ] };
+        const photo = await tg(env, 'sendPhoto', {
+          chat_id: chatId,
+          photo: 'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/pippo.jpg',
+          caption: startTxt,
+          parse_mode: 'HTML',
+          reply_markup: markup
+        });
+        if (photo.ok) return photo;
+        console.error('DM /start photo failed:', photo.description || 'sendPhoto failed');
         return send(env, chatId, startTxt, { card: spec, reply_markup: markup });
       }
 
