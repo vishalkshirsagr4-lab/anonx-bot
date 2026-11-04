@@ -282,44 +282,53 @@ async function searchNazriya(env, query) {
   url.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
   return musicItems(await fetchNazriyaJson(url.toString())).slice(0, 5);
 }
+
 async function sendNazriyaMedia(env, msg, item, kind) {
-  const id = String(item.id || '').trim();
-  if (!id || !/^[A-Za-z0-9_-]{3,80}$/.test(id)) {
-    return { ok: false, reason: 'The selected result has no valid media ID.' };
-  }
+  const id = String(item.id || item.videoId || item.video_id || item.songId || item.track_id || '').trim();
+  if (!id) return { ok: false, reason: 'Search result contains no media ID.' };
+
   const endpoint = new URL(NAZRIYA_API_BASE + (kind === 'audio' ? '/audio' : '/video'));
   endpoint.searchParams.set('id', id);
   endpoint.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
-  const payload = await fetchNazriyaJson(endpoint.toString());
-  if (!musicAuthorized(payload) && !musicAuthorized(payload?.data) && !musicAuthorized(payload?.result)) {
-    return { ok: false, reason: 'The media provider did not confirm distribution rights.' };
+
+  let payload;
+  try {
+    payload = await fetchNazriyaJson(endpoint.toString());
+  } catch (e) {
+    console.error('[nazriya] fetch failed:', endpoint.toString(), e.message);
+    return { ok: false, reason: 'Media API request failed: ' + e.message };
   }
+  console.log('[nazriya] payload keys:', Object.keys(payload), JSON.stringify(payload).slice(0, 400));
+
   const mediaUrl = mediaPayloadUrl(payload, kind);
-  if (!mediaUrl) return { ok: false, reason: 'The provider did not return a direct HTTPS media URL.' };
-  const mediaResponse = await fetch(mediaUrl, { signal: AbortSignal.timeout(25000) });
-  if (!mediaResponse.ok) throw new Error('Media source returned HTTP ' + mediaResponse.status);
-  const contentType = String(mediaResponse.headers.get('content-type') || '').toLowerCase();
-  const expected = kind === 'audio' ? contentType.startsWith('audio/') : contentType.startsWith('video/');
-  if (!expected) return { ok: false, reason: 'The direct source did not return a valid ' + kind + ' media file.' };
+  if (!mediaUrl) return { ok: false, reason: 'No direct HTTPS media URL in API response.' };
+
+  const mediaResponse = await fetch(mediaUrl, { signal: AbortSignal.timeout(30000) });
+  if (!mediaResponse.ok) return { ok: false, reason: 'Media source HTTP ' + mediaResponse.status };
+
   const blob = await mediaResponse.blob();
-  if (!blob.size || blob.size > 45 * 1024 * 1024) {
-    return { ok: false, reason: 'The media file is empty or exceeds Telegram upload limits.' };
-  }
+  if (!blob.size) return { ok: false, reason: 'Empty media file.' };
+  if (blob.size > 45 * 1024 * 1024) return { ok: false, reason: 'File exceeds 45 MB Telegram upload limit.' };
+
   const title = musicField(item, ['title','name','song','track']) || 'Piko music';
-  const safeTitle = title.replace(/[\\r\\n]/g, ' ').slice(0, 900);
-  const caption = '🎵 <b>' + esc(safeTitle) + '</b>\n👤 ' + esc(musicField(item, ['uploader','artist','author']) || 'Artist not listed');
   const method = kind === 'audio' ? 'sendAudio' : 'sendVideo';
   const field = kind === 'audio' ? 'audio' : 'video';
   const ext = kind === 'audio' ? 'mp3' : 'mp4';
+
   const sent = await tgForm(env, method, {
     chat_id: msg.chat.id,
-    caption,
+    caption: `🎵 <b>${esc(title.slice(0,900))}</b>`,
     parse_mode: 'HTML',
     reply_to_message_id: msg.message_id
-  }, field, blob, 'piko-' + id + '.' + ext);
-  if (!sent?.ok) throw new Error(sent?.description || 'Telegram rejected the media upload');
+  }, field, blob, 'piko.' + ext);
+
+  if (!sent?.ok) {
+    console.error('[nazriya] Telegram send failed:', sent?.description);
+    return { ok: false, reason: 'Telegram: ' + (sent?.description || 'unknown') };
+  }
   return { ok: true };
 }
+
 async function musicSearchCommand(env, msg, cmd) {
   const query = String(cmd.arg || '').trim().slice(0, 120);
   if (!query) return reply(env, msg.chat.id, '🎵 <b>Piko Music</b>\n\n/search song — search metadata\n/play song — send authorized audio to this group\n/song song — same as /play\n/video song — send authorized video to this group\n/music song — send authorized audio and video');
