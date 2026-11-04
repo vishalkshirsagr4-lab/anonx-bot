@@ -362,7 +362,7 @@ export async function handleGameCallback(env, cq, data) {
     if (!claimed) return { toast: 'Another member found the treasure first!', alert: true };
     await kvDel(env, key(chatId));
     await addCoins(env, userId, 20);
-    await editCq(env, cq, '💎 <b>Treasure found!</b>\\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙! The hunt is complete.');
+    await editCq(env, cq, '💎 <b>Treasure found!</b>\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙! The hunt is complete.');
     return { toast: 'Treasure found! +20 coins' };
   }
   return null;
