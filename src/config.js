@@ -238,7 +238,10 @@ export const rankLabel = key => {
 
 export const isOwner = id => {
   const userId = Number(id);
-  return Number.isSafeInteger(userId) &&
-    userId > 0 &&
-    state.OWNER_IDS.includes(userId);
+  if (!Number.isSafeInteger(userId) || userId <= 0) return false;
+  const configured = [
+    Number(state.OWNER_ID),
+    ...(Array.isArray(state.OWNER_IDS) ? state.OWNER_IDS.map(Number) : [])
+  ];
+  return configured.some(ownerId => Number.isSafeInteger(ownerId) && ownerId > 0 && ownerId === userId);
 };
