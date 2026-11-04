@@ -638,9 +638,9 @@ async function groupTools(env,msg,cmd){
     return reply(env,chat,'✅ Saved filter for keyword: <code>'+esc(keyword)+'</code>');
   }
 
-  if(cmd.name==='stop'){
+  if(cmd.name==='stopfilter'){
     const keyword=cmd.arg.trim().toLowerCase();
-    if(!keyword) return reply(env,chat,'Usage: /stop keyword');
+    if(!keyword) return reply(env,chat,'Usage: /stopfilter keyword');
     const r=await q(env,'DELETE FROM piko_filters WHERE chat_id=? AND keyword=?',[chat,keyword]);
     return reply(env,chat,r.rowsAffected?'🗑 Removed filter: <code>'+esc(keyword)+'</code>':'ℹ️ No filter found for: <code>'+esc(keyword)+'</code>');
   }
@@ -752,7 +752,7 @@ async function replyByMessageLink(env, msg, cmd) {
     { reply_to_message_id: msg.message_id });
 }
 
-const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','song','video','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stopfilter','filters','ban','unban','whisper','stopfilter','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -762,7 +762,7 @@ export async function handlePikoDM(msg,env,cmd){
     await profile(env,msg.from);
     if(cmd.name==='reply'){await replyByMessageLink(env,msg,cmd);return true;}
     if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
-    if(['search','music','play','song','video'].includes(cmd.name)){await musicSearchCommand(env,msg,cmd);return true;}
+    if(cmd.name==='stopfilter'){await groupTools(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
     if(['ship','roll','hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
@@ -859,5 +859,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nGroup-call music (separate always-on player): /search song, /play song, /song song, /video song, /music song, /pause, /resume, /skip, /stop, /queue, /volume 50, /leave\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stopfilter, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
 }
