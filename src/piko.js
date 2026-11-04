@@ -384,7 +384,7 @@ async function musicSearchCommand(env, msg, cmd) {
     }
     if (cmd.name === 'music') {
       const title = musicTitle(items[0]);
-      await editStatus('🎵 <b>' + esc(title.slice(0, 140)) + '</b>\n\nChoose playback type:\n🎧 Audio: <code>/play ' + esc(query) + '</code> (or <code>/song ' + esc(query) + '</code>)\n🎬 Video: <code>/video ' + esc(query) + '</code>\n\nPlayback is queued in this group voice chat. Media must have verifiable playback permission.');
+      await editStatus('🎵 <b>' + esc(title.slice(0, 140)) + '</b>\n\nChoose playback type:\n🎧 Audio: <code>/play ' + esc(query) + '</code> (or <code>/song ' + esc(query) + '</code>)\n🎬 Video: <code>/video ' + esc(query) + '</code>\n\nChoose one command above to request group-call playback. Media must have verifiable playback permission.');
       return true;
     }
     const kind = cmd.name === 'video' ? 'video' : 'audio';
