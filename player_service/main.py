@@ -135,14 +135,13 @@ async def _resolve_media(query, kind):
         if not matches:
             raise HTTPException(404, "No matching song was found.")
         selected = matches[0]
-        if not _authorized(selected):
-            raise HTTPException(403, "This result has no verifiable permission for group playback.")
         endpoint = f"{API_BASE}/{kind}"
         media_payload = await _provider_json(
             session, endpoint + "?" + urlencode({"q": query, "key": API_KEY})
         )
-        if not _authorized(media_payload) and not any(_authorized(x) for x in _items(media_payload)):
-            raise HTTPException(403, "The media response does not confirm playback rights.")
+        rights_verified = _authorized(selected) or _authorized(media_payload) or any(_authorized(x) for x in _items(media_payload))
+        if not rights_verified:
+            raise HTTPException(403, "The provider did not confirm playback rights for this media.")
         url = _media_url(media_payload)
         if not url:
             raise HTTPException(422, "Provider did not return a safe HTTPS media stream URL.")
