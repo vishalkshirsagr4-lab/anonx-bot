@@ -13,7 +13,7 @@ function javascriptFiles(directory) {
   return files;
 }
 
-const files = ['src', 'test'].flatMap(javascriptFiles);
+const files = ['src', 'test', 'scripts'].flatMap(javascriptFiles);
 let failed = false;
 
 for (const file of files) {
