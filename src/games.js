@@ -74,7 +74,9 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
       const recentFew = used.slice(-3).map(normalize);
       available = EMOJI_FALLBACK.filter(candidate => !recentFew.includes(normalize(candidate.q)));
     }
-    // Last-resort guarantee: even if recent-history data is unusual, never block /emoji.\n    if (!available.length) available = EMOJI_FALLBACK;\n    item = available[Math.floor(Math.random() * available.length)];
+    // Last-resort guarantee: even if recent-history data is unusual, never block /emoji.
+    if (!available.length) available = EMOJI_FALLBACK;
+    item = available[Math.floor(Math.random() * available.length)];
   }
   if (!item) {
     console.error('Game question unavailable:', { type, topic, groqConfigured: !!env?.GROQ_API_KEY });
