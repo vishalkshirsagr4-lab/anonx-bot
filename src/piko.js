@@ -808,7 +808,7 @@ export async function handlePikoGroup(msg,env,cmd){
     return false;
   }
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
-    if(['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){
+    if(['welcome','setwelcome','delwelcome','save','stopfilter','filters','ban','unban'].includes(cmd.name)){
       try {
         await groupTools(env,msg,cmd);
       } catch(error) {
