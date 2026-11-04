@@ -237,8 +237,8 @@ export async function handleGameCallback(env, cq, data) {
     if (!claimed) return { toast: 'Another member answered correctly first.', alert: true };
     await addCoins(env, userId, 15);
     await editCq(env, cq,
-      '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\\n\\n' +
-      esc(session.question) + '\\n\\n<b>Round completed.</b>');
+      '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' +
+      esc(session.question) + '\n\n<b>Round completed.</b>');
     return { toast: 'Correct! +15 coins' };
   }
   if (data.startsWith('grpm_join_')) {
@@ -362,12 +362,12 @@ export async function handleGameCallback(env, cq, data) {
     await kvDel(env, key(chatId));
     if (spot !== session.hidden) {
       const cells = ['🌳','🪨','📦','🌲','🏕️','🧰','🪵','🌿','🗺️'];
-      await editCq(env, cq, '❌ <b>Hunt over!</b>\\n' + esc(cq.from.first_name || 'Player') +
-        ' used their one try, but found nothing.\\n\\nThe treasure was hidden under ' + cells[session.hidden] + '.');
+      await editCq(env, cq, '❌ <b>Hunt over!</b>\n' + esc(cq.from.first_name || 'Player') +
+        ' used their one try, but found nothing.\n\nThe treasure was hidden under ' + cells[session.hidden] + '.');
       return { toast: 'Wrong spot. Hunt over!', alert: true };
     }
     await addCoins(env, userId, 20);
-    await editCq(env, cq, '💎 <b>Treasure found!</b>\\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙!');
+    await editCq(env, cq, '💎 <b>Treasure found!</b>\n' + esc(cq.from.first_name || 'Player') + ' found the hidden coins and earned 20 🪙!');
     return { toast: 'Treasure found! +20 coins' };
   }
   return null;
