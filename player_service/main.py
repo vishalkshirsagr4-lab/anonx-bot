@@ -6,7 +6,7 @@ import re
 import socket
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import aiohttp
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -113,7 +113,7 @@ async def _provider_json(session, url):
             payload = await response.json(content_type=None)
         except Exception:
             raise HTTPException(422, "Provider did not return verifiable media metadata.")
-        if payload.get("status") == "error" or payload.get("success") is False:
+        if not isinstance(payload, dict) or payload.get("status") == "error" or payload.get("success") is False:
             raise HTTPException(502, "Music provider could not resolve this request.")
         return payload
 
@@ -140,7 +140,7 @@ async def _resolve_media(query, kind):
             raise HTTPException(403, "This result has no verifiable permission for group playback.")
         endpoint = f"{API_BASE}/{kind}"
         media_payload = await _provider_json(
-            session, endpoint + "?" + aiohttp.client_reqrep.urlencode({"q": query, "key": API_KEY})
+            session, endpoint + "?" + urlencode({"q": query, "key": API_KEY})
         )
         if not _authorized(media_payload) and not any(_authorized(x) for x in _items(media_payload)):
             raise HTTPException(403, "The media response does not confirm playback rights.")
@@ -197,7 +197,7 @@ async def lifespan(_: FastAPI):
     await telegram.start()
     calls = PyTgCalls(telegram)
     calls.on_update(call_filters.stream_end())(_on_stream_end)
-    await calls.start()
+    calls.start()
     print("[player] Telegram group-call service is ready.")
     yield
     try:
