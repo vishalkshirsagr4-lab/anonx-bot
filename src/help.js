@@ -8,7 +8,7 @@ export function getHelp() {
   HELP = {
     ask: {
       title: '❓ Ask & Reply',
-      cmds: `<b>❓ Ask &amp; Reply</b>\n\n/ask <code>&lt;text&gt;</code> — Post an anonymous question\n/ask <code>-100…</code> <code>&lt;text&gt;</code> — Post to a specific group\nReply to media with /ask — Post anonymously\n/reveal — Reveal who is behind a post\n/wallet — Check your coin balance\n/cancel — Cancel any pending action`,
+      cmds: `<b>❓ Ask &amp; Reply</b>\n\n/reply <code>&lt;message_link&gt; &lt;text&gt;</code> — reply to a linked message\n/reply <code>&lt;text&gt; &lt;message_link&gt;</code> — same format\n/reply <code>&lt;message_link&gt;</code> — copy linked message/media\n/ask <code>&lt;text&gt;</code> — Post an anonymous question\n/ask <code>-100…</code> <code>&lt;text&gt;</code> — Post to a specific group\nReply to media with /ask — Post anonymously\n/reveal — Reveal who is behind a post\n/wallet — Check your coin balance\n/cancel — Cancel any pending action`,
       rules: `<b>📜 Rules</b>\n\n1. Your identity stays hidden.\n2. Tap <b>💬 Reply</b> under a post and send in DM within 10 min.\n3. Topic closes after ${state.TOPIC_END_IDLE_MINUTES} min inactivity.\n4. <b>Secret Reveal</b>: ${CFG.REVEAL_COST_SECRET} 🪙.\n5. <b>Reveal</b>: ${CFG.REVEAL_COST_NORMAL} 🪙 (user warned).\n6. Be respectful.`,
     },
     contest: {
