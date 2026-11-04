@@ -5,7 +5,7 @@ Piko runs on Cloudflare Workers with Turso (libSQL) storage. Existing anonymous 
 ## Piko features
 
 - Groq-powered AI chat in private messages
-- Voice-message transcription with Groq Whisper\n- Music discovery: `/search`, `/music`, `/play` (song metadata and supported official listening links; no media downloading)
+- Voice-message transcription with Groq Whisper\n- Group-call music player: `/search`, `/play`, `/song`, `/video`, `/music`, `/pause`, `/resume`, `/skip`, `/stop`, `/queue`, `/volume`, `/leave` (separate Python user-account service)
 - AI image generation (5 credits per image)
 - Credits and coin economy: `/credits`, `/daily`, `/work`, `/crime`, `/rob`, `/pay`
 - Fun commands: `/ship`, `/roll`, `/trivia`, `/hug`, `/slap`, `/punch`, `/kick`
@@ -27,7 +27,11 @@ Keep all credentials out of source files. Configure these as GitHub Actions secr
 - `OWNER_ID` (and optionally `OWNER_IDS`)
 
 Optional:
-- `GROQ_API_KEY` — enables AI chat and voice transcription. Without it, those features explain that setup is required.\n- `NAZRIYA_API_KEY` — enables Piko music search. Set it as a Cloudflare Worker secret; never put it in `wrangler.toml` or source code.
+- `GROQ_API_KEY` — enables AI chat and voice transcription. Without it, those features explain that setup is required.
+
+## Group-call player secrets
+
+Configure these on the separate always-on Linux player host (not as Cloudflare Worker secrets): `API_ID`, `API_HASH`, `STRING_SESSION`, `NAZRIYA_API_KEY`, and optionally `NAZRIYA_API_BASE=https://nazriya.teamgod.online/api`. Put them in the host environment or a private `.env` file with restricted permissions. Never commit `.env` or share `STRING_SESSION`.
 
 The GitHub Actions workflow runs JavaScript syntax checks and the build before deploying. The existing test suite requires a configured Turso database, so it is not run against production automatically.
 
@@ -41,4 +45,4 @@ Never commit bot tokens, API keys, database URLs or database auth tokens. Rotate
 
 ## VPS voice chat streaming
 
-The Worker music commands do not stream into Telegram voice chats. For real-time group voice/video chat playback, use the separate Python user-account deployment in [VPS_DEPLOYMENT.md](./VPS_DEPLOYMENT.md), with [main.py](./main.py), [requirements.txt](./requirements.txt), and [generate_string_session.py](./generate_string_session.py). That service requires Linux, FFmpeg, `API_ID`, `API_HASH`, and a Pyrogram `STRING_SESSION`; it does not use a Bot Token.
+The group-call commands are handled by the separate Python user-account deployment in [VPS_DEPLOYMENT.md](./VPS_DEPLOYMENT.md). Keep the Cloudflare Worker deployed for Piko's existing bot features, and run the Python player continuously on an always-on Linux host. The player requires FFmpeg, `API_ID`, `API_HASH`, `STRING_SESSION`, and `NAZRIYA_API_KEY`; it does not use the Bot Token.
