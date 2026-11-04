@@ -33,13 +33,6 @@ function loadEnv() {
     }
   }
 
-  // Set default secrets for development if not provided
-  if (!process.env.WEBHOOK_SECRET) {
-    process.env.WEBHOOK_SECRET = 'anonx_webhook_secret_key_32_chars';
-  }
-  if (!process.env.ADMIN_SECRET) {
-    process.env.ADMIN_SECRET = 'anonx_admin_secret_key_32_characters_long';
-  }
   if (!process.env.BOT_NAME) {
     process.env.BOT_NAME = 'AnonX';
   }
@@ -57,7 +50,7 @@ function renderDashboard(host) {
   const isBotConfigured = Boolean(process.env.BOT_TOKEN && process.env.BOT_TOKEN.length > 10);
   const isTursoConfigured = Boolean(process.env.TURSO_DB_URL && process.env.TURSO_AUTH_TOKEN);
   const botName = process.env.BOT_NAME || 'AnonX';
-  const adminSecret = process.env.ADMIN_SECRET || 'anonx_admin_secret_key_32_characters_long';
+  const adminSecret = process.env.ADMIN_SECRET || '';
   const webhookUrl = `https://${host}/webhook`;
 
   return `<!DOCTYPE html>

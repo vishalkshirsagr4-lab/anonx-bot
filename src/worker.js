@@ -13,8 +13,8 @@ export default {
 
     const url = new URL(request.url);
 
-    const webhookSecret = state.WEBHOOK_SECRET || env?.WEBHOOK_SECRET || 'anonx_webhook_secret_key_32_chars';
-    const adminSecret = state.ADMIN_SECRET || env?.ADMIN_SECRET || 'anonx_admin_secret_key_32_characters_long';
+    const webhookSecret = String(env?.WEBHOOK_SECRET || state.WEBHOOK_SECRET || '').trim();
+    const adminSecret = String(env?.ADMIN_SECRET || state.ADMIN_SECRET || '').trim();
 
     // Admin endpoints require a separate secret.
     const isAdmin = () => {
@@ -30,6 +30,9 @@ export default {
 
     // ─── Admin authentication ───
     const adminOnly = () => {
+      if (!adminSecret) {
+        return new Response('Admin secret is not configured.', { status: 503, headers: { 'Cache-Control': 'no-store' } });
+      }
       if (!isAdmin()) {
         return new Response('Unauthorized', {
           status: 401,
@@ -71,6 +74,9 @@ export default {
         image_api: imgBase(env)
           ? 'configured'
           : 'not configured',
+        ai_chat: String(env?.GROQ_API_KEY || '').trim() ? 'configured' : 'missing',
+        ai_model: String(env?.GROQ_CHAT_MODEL || 'openai/gpt-oss-20b'),
+        voice_transcription: String(env?.GROQ_API_KEY || '').trim() ? 'configured' : 'missing',
         bot_name: state.BOT_NAME
       };
 
@@ -147,6 +153,10 @@ export default {
 
       const denied = adminOnly();
       if (denied) return denied;
+
+      if (!webhookSecret) {
+        return new Response('WEBHOOK_SECRET is not configured.', { status: 503, headers: { 'Cache-Control': 'no-store' } });
+      }
 
       try {
         await initDB(env);
@@ -240,6 +250,10 @@ export default {
       return new Response('Not found', {
         status: 404
       });
+    }
+
+    if (!webhookSecret) {
+      return new Response('Webhook secret is not configured.', { status: 503 });
     }
 
     if (

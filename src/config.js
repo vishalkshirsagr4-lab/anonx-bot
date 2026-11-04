@@ -12,12 +12,12 @@ export const state = {
   IMAGE_API_URL: '',
   IMAGE_API_KEY: '',
 
-  OWNER_ID: 8750122483,
-  OWNER_IDS: [8750122483],
+  OWNER_ID: 0,
+  OWNER_IDS: [],
   SUPPORT_GROUP: 'https://t.me/+lOxdvQHVCSdhZWU9',
   BOT_NAME: 'Piko',
 
-  DELDB_PASSWORD: '8660',
+  DELDB_PASSWORD: '',
 
   MULTI_ANON: true,
   ANON_SHUFFLE_MODE: false,
@@ -193,7 +193,7 @@ export function applyEnv(env) {
     .filter(value => /^\d+$/.test(value))
     .map(Number)
     .filter(value => Number.isSafeInteger(value) && value > 0);
-  state.OWNER_IDS = [...new Set([Number(state.OWNER_ID), ...parsedOwnerIds])];
+  state.OWNER_IDS = [...new Set([Number(state.OWNER_ID), ...parsedOwnerIds])].filter(id => Number.isSafeInteger(id) && id > 0);
 
   state.SUPPORT_GROUP = pick(env, 'SUPPORT_GROUP', state.SUPPORT_GROUP);
   state.BOT_NAME = pick(env, 'BOT_NAME', state.BOT_NAME);
@@ -238,7 +238,10 @@ export const rankLabel = key => {
 
 export const isOwner = id => {
   const userId = Number(id);
-  return Number.isSafeInteger(userId) &&
-    userId > 0 &&
-    state.OWNER_IDS.includes(userId);
+  if (!Number.isSafeInteger(userId) || userId <= 0) return false;
+  const configured = [
+    Number(state.OWNER_ID),
+    ...(Array.isArray(state.OWNER_IDS) ? state.OWNER_IDS.map(Number) : [])
+  ];
+  return configured.some(ownerId => Number.isSafeInteger(ownerId) && ownerId > 0 && ownerId === userId);
 };

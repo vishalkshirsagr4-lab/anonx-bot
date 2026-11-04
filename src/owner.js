@@ -1000,7 +1000,13 @@ export async function handleDeldbConfirm(env, cq) {
     'votes',
     'preregs',
     'claims',
-    'wins'
+    'wins',
+    'run_rewards',
+    'piko_profiles',
+    'piko_history',
+    'piko_groups',
+    'piko_filters',
+    'piko_bans'
   ];
 
   await batch(
