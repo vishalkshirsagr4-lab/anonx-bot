@@ -283,12 +283,9 @@ async function searchNazriya(env, query) {
   return musicItems(await fetchNazriyaJson(url.toString())).slice(0, 5);
 }
 
-async function sendNazriyaMedia(env, msg, item, kind) {
-  const id = String(item.id || item.videoId || item.video_id || item.songId || item.track_id || '').trim();
-  if (!id) return { ok: false, reason: 'Search result contains no media ID.' };
-
+async function sendNazriyaMedia(env, msg, query, kind) {
   const endpoint = new URL(NAZRIYA_API_BASE + (kind === 'audio' ? '/audio' : '/video'));
-  endpoint.searchParams.set('id', id);
+  endpoint.searchParams.set('q', String(query || '').trim().slice(0, 120));
   endpoint.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
 
   let payload;
@@ -298,7 +295,7 @@ async function sendNazriyaMedia(env, msg, item, kind) {
     console.error('[nazriya] fetch failed:', endpoint.toString(), e.message);
     return { ok: false, reason: 'Media API request failed: ' + e.message };
   }
-  console.log('[nazriya] payload keys:', Object.keys(payload), JSON.stringify(payload).slice(0, 400));
+  console.log('[nazriya] payload:', JSON.stringify(payload).slice(0, 500));
 
   const mediaUrl = mediaPayloadUrl(payload, kind);
   if (!mediaUrl) return { ok: false, reason: 'No direct HTTPS media URL in API response.' };
@@ -310,14 +307,14 @@ async function sendNazriyaMedia(env, msg, item, kind) {
   if (!blob.size) return { ok: false, reason: 'Empty media file.' };
   if (blob.size > 45 * 1024 * 1024) return { ok: false, reason: 'File exceeds 45 MB Telegram upload limit.' };
 
-  const title = musicField(item, ['title','name','song','track']) || 'Piko music';
+  const title = String(query || 'Piko music').slice(0, 900);
   const method = kind === 'audio' ? 'sendAudio' : 'sendVideo';
   const field = kind === 'audio' ? 'audio' : 'video';
   const ext = kind === 'audio' ? 'mp3' : 'mp4';
 
   const sent = await tgForm(env, method, {
     chat_id: msg.chat.id,
-    caption: `🎵 <b>${esc(title.slice(0,900))}</b>`,
+    caption: `🎵 <b>${esc(title)}</b>`,
     parse_mode: 'HTML',
     reply_to_message_id: msg.message_id
   }, field, blob, 'piko.' + ext);
