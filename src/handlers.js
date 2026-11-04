@@ -606,6 +606,20 @@ export async function setupCommands(env) {
     { command: 'slap', description: 'Playful sticker (reply to a message)' },
     { command: 'punch', description: 'Playful sticker (reply to a message)' },
     { command: 'kick', description: 'Playful sticker (reply to a message)' },
+
+    { command: 'search', description: 'Search music with Nazriya' },
+    { command: 'play', description: 'Play audio in the group call' },
+    { command: 'song', description: 'Play audio (alias)' },
+    { command: 'video', description: 'Play video in the group call' },
+    { command: 'music', description: 'Choose audio or video' },
+    { command: 'pause', description: 'Pause group-call playback' },
+    { command: 'resume', description: 'Resume group-call playback' },
+    { command: 'skip', description: 'Skip to next queued track' },
+    { command: 'stop', description: 'Stop playback and clear queue' },
+    { command: 'queue', description: 'Show music queue' },
+    { command: 'volume', description: 'Set player volume (0-100)' },
+    { command: 'leave', description: 'Leave the group call' },
+    { command: 'stopfilter', description: 'Remove a keyword filter' },
     { command: 'leaderboard', description: 'Top 10 group' },
   ];
 
