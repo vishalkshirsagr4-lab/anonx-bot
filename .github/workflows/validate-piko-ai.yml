@@ -1,0 +1,23 @@
+name: Validate Piko AI and Worker
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/piko-ai-reliability-security]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Check every JavaScript file
+        run: npm run lint
+      - name: Build check
+        run: npm run build
