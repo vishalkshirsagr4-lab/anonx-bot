@@ -3,6 +3,7 @@
 import { state, isOwner } from './config.js';
 import { q, batch, kvGet, kvPut, kvDel } from './db.js';
 import { tg, tgForm } from './telegram.js';
+import { sendAnonMessage } from './anon.js';
 import { getBotInfo } from './helpers.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
@@ -664,34 +665,32 @@ async function replyByMessageLink(env, msg, cmd) {
   const target = link ? parseTelegramMessageLink(link) : null;
   if (!target || !Number.isSafeInteger(target.messageId) || target.messageId <= 0) {
     return reply(env, msg.chat.id,
-      '❌ Invalid Telegram message link.\n\nUsage:\n/reply <message_link> <text>\n/reply <text> <message_link>\n/reply <message_link> (copies the linked message, including media).',
+      '❌ Invalid Telegram message link.\n\nUsage:\n/reply <message_link> <text>\n/reply <text> <message_link>\n/reply <message_link> (anonymously copy the linked message/media).',
       { reply_to_message_id: msg.message_id });
   }
+
   const text = linkMatch ? (raw.slice(0, linkMatch.index) + raw.slice(linkMatch.index + linkMatch[0].length)).trim() : '';
-  const thread = target.threadId ? { message_thread_id: target.threadId } : {};
-  let result;
-  if (text) {
-    result = await tg(env, 'sendMessage', {
-      chat_id: target.chatId,
-      text: text.slice(0, 4096),
-      reply_to_message_id: target.messageId,
-      ...thread
-    });
-  } else {
-    result = await tg(env, 'copyMessage', {
-      chat_id: target.chatId,
-      from_chat_id: target.chatId,
-      message_id: target.messageId,
-      ...thread
-    });
-  }
+  const threadData = {
+    threadId: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    lastActive: Date.now(),
+    users: {},
+    nextCount: 1
+  };
+  const source = text
+    ? {}
+    : { photo: true, chat: { id: target.chatId }, message_id: target.messageId };
+
+  const result = await sendAnonMessage(
+    env, msg.from.id, source, target.chatId, target.messageId, threadData,
+    text, target.threadId || null
+  );
   if (!result?.ok) {
-    const detail = result?.description || 'The bot may not have access to that chat or message.';
-    return reply(env, msg.chat.id, '❌ Could not reply: ' + esc(detail), { reply_to_message_id: msg.message_id });
+    return reply(env, msg.chat.id,
+      '❌ Could not post anonymously. Check that I can access the linked chat and send messages there.',
+      { reply_to_message_id: msg.message_id });
   }
-  return reply(env, msg.chat.id, text
-    ? '✅ Your reply was sent to the linked message.'
-    : '✅ The linked message was copied (media is supported).',
+  return reply(env, msg.chat.id,
+    '✅ Your anonymous reply was posted. A 💬 Reply button is attached so others can reply anonymously too.',
     { reply_to_message_id: msg.message_id });
 }
 
