@@ -3,7 +3,6 @@ import hmac
 import ipaddress
 import os
 import re
-import socket
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from urllib.parse import urlencode, urlparse
