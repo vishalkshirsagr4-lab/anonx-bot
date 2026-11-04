@@ -49,7 +49,7 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
   const used = Array.isArray(recent) ? recent : [];
   let item = null;
   // Ask Groq again if it returns a recently-used question.
-  for (let attempt = 0; attempt < 5 && !item; attempt++) {
+  for (let attempt = 0; attempt < 2 && !item; attempt++) {
     try {
       const fresh = await generateGameContent(env, type, attempt ? topic + ' (new variation ' + attempt + ')' : topic, used);
       if (!fresh || typeof fresh.q !== 'string' || !Array.isArray(fresh.a) || fresh.a.length !== 4 ||
@@ -74,7 +74,7 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
       const recentFew = used.slice(-3).map(normalize);
       available = EMOJI_FALLBACK.filter(candidate => !recentFew.includes(normalize(candidate.q)));
     }
-    if (available.length) item = available[Math.floor(Math.random() * available.length)];
+    // Last-resort guarantee: even if recent-history data is unusual, never block /emoji.\n    if (!available.length) available = EMOJI_FALLBACK;\n    item = available[Math.floor(Math.random() * available.length)];
   }
   if (!item) {
     console.error('Game question unavailable:', { type, topic, groqConfigured: !!env?.GROQ_API_KEY });
