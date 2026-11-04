@@ -468,6 +468,25 @@ export async function initDB(env) {
       `UPDATE submissions
        SET votes = (SELECT COUNT(*) FROM votes WHERE votes.sub_id = submissions.id)`);
 
+    // Game answer ledgers make player attempts and rewards concurrency-safe.
+    await q(env, `CREATE TABLE IF NOT EXISTS game_answers (
+      chat_id TEXT NOT NULL,
+      game_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      choice INTEGER NOT NULL,
+      answered_at INTEGER NOT NULL,
+      PRIMARY KEY (chat_id, game_id, user_id)
+    )`);
+    await q(env, `CREATE TABLE IF NOT EXISTS game_word_guesses (
+      chat_id TEXT NOT NULL,
+      game_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      message_id INTEGER NOT NULL,
+      guess TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (chat_id, game_id, user_id, message_id)
+    )`);
+
     DB_INITIALIZED = true;
   })().catch(error => {
     DB_INIT_PROMISE = null;
