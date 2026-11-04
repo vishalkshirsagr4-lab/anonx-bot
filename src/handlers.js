@@ -69,8 +69,10 @@ async function handleGroupMessage(msg, env) {
   }
 
   const cmd = parseCommand(msg.text || '');
+  // Active word-game guesses must be processed before Piko's general group AI.
+  if (!cmd && await handleGameMessage(env, msg)) return;
   if (await handlePikoGroup(msg, env, cmd)) return;
-  if (!cmd) return handleGameMessage(env, msg);
+  if (!cmd) return;
   if (cmd.bot) {
     const bi = await getBotInfo(env);
     if (bi && bi.username.toLowerCase() !== cmd.bot.toLowerCase()) return;
