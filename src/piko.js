@@ -364,7 +364,7 @@ async function musicSearchCommand(env, msg, cmd) {
 const failures = [];
 for (const kind of kinds) {
   try {
-    const result = await sendNazriyaMedia(env, msg, selected, kind);
+    const result = await sendNazriyaMedia(env, msg, query, kind);
         if (result.ok) sentCount++;
         else failures.push((kind === 'audio' ? 'Audio: ' : 'Video: ') + result.reason);
       } catch (error) {
