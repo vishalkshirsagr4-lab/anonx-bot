@@ -641,25 +641,25 @@ function parseTelegramMessageLink(raw) {
   if (!['t.me', 'www.t.me', 'telegram.me', 'www.telegram.me'].includes(url.hostname.toLowerCase())) return null;
   const parts = url.pathname.split('/').filter(Boolean);
   if (parts[0] === 'c') {
-    if (parts.length < 3 || !/^\\d+$/.test(parts[1])) return null;
+    if (parts.length < 3 || !/^\d+$/.test(parts[1])) return null;
     const chatId = '-100' + parts[1];
-    if (parts.length >= 4 && /^\\d+$/.test(parts[2]) && /^\\d+$/.test(parts[3])) {
+    if (parts.length >= 4 && /^\d+$/.test(parts[2]) && /^\d+$/.test(parts[3])) {
       return { chatId, threadId: Number(parts[2]), messageId: Number(parts[3]) };
     }
-    if (!/^\\d+$/.test(parts[2])) return null;
+    if (!/^\d+$/.test(parts[2])) return null;
     return { chatId, messageId: Number(parts[2]) };
   }
   if (parts.length < 2 || !/^[a-zA-Z0-9_]{5,}$/.test(parts[0])) return null;
-  if (parts.length >= 3 && /^\\d+$/.test(parts[1]) && /^\\d+$/.test(parts[2])) {
+  if (parts.length >= 3 && /^\d+$/.test(parts[1]) && /^\d+$/.test(parts[2])) {
     return { chatId: '@' + parts[0], threadId: Number(parts[1]), messageId: Number(parts[2]) };
   }
-  if (!/^\\d+$/.test(parts[1])) return null;
+  if (!/^\d+$/.test(parts[1])) return null;
   return { chatId: '@' + parts[0], messageId: Number(parts[1]) };
 }
 
 async function replyByMessageLink(env, msg, cmd) {
   const raw = String(cmd.arg || '').trim();
-  const linkMatch = raw.match(/https?:\\/\\/(?:www\\.)?(?:t\\.me|telegram\\.me)\\/[a-zA-Z0-9_/-]+(?:\\?[^\\s]*)?/i);
+  const linkMatch = raw.match(/https?:\/\/(?:www\.)?(?:t\.me|telegram\.me)\/[a-zA-Z0-9_/-]+(?:\?[^\s]*)?/i);
   const link = linkMatch?.[0]?.replace(/[),.!?]+$/, '');
   const target = link ? parseTelegramMessageLink(link) : null;
   if (!target || !Number.isSafeInteger(target.messageId) || target.messageId <= 0) {
