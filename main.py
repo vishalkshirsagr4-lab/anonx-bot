@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,8 +40,9 @@ def required_env(name: str) -> str:
 API_ID = int(required_env("API_ID"))
 API_HASH = required_env("API_HASH")
 STRING_SESSION = required_env("STRING_SESSION")
-NAZRIYA_BASE = os.getenv("NAZRIYA_API_BASE", "https://nazriya.teamgod.online").rstrip("/")
-NAZRIYA_API_KEY = os.getenv("NAZRIYA_API_KEY", "").strip()
+_nazriya_base = os.getenv("NAZRIYA_API_BASE", "https://nazriya.teamgod.online/api").rstrip("/")
+NAZRIYA_API_BASE = _nazriya_base if _nazriya_base.endswith("/api") else _nazriya_base + "/api"
+NAZRIYA_API_KEY = required_env("NAZRIYA_API_KEY")
 MAX_DOWNLOAD_MB = int(os.getenv("MAX_DOWNLOAD_MB", "500"))
 DOWNLOAD_DIR = Path(os.getenv("MUSIC_DOWNLOAD_DIR", tempfile.gettempdir())) / "anonx-music"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -67,6 +69,7 @@ class ChatPlayback:
 
 
 playbacks: dict[int, ChatPlayback] = {}
+pending_music_choices: dict[str, tuple[int, str]] = {}
 
 
 def state_for(chat_id: int) -> ChatPlayback:
@@ -112,7 +115,7 @@ def result_items(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [x for x in payload if isinstance(x, dict)]
     if isinstance(payload, dict):
-        for key in ("results", "data", "tracks", "items", "videos"):
+        for key in ("results", "data", "songs", "tracks", "items", "videos", "result"):
             value = payload.get(key)
             if isinstance(value, list):
                 return [x for x in value if isinstance(x, dict)]
@@ -130,7 +133,7 @@ async def api_request(kind: str, query: str) -> Any:
     if NAZRIYA_API_KEY:
         params["key"] = NAZRIYA_API_KEY
     async with aiohttp.ClientSession(timeout=timeout, headers={"User-Agent": "AnonxMusicBot/1.0"}) as session:
-        async with session.get(f"{NAZRIYA_BASE}/api/{endpoint}", params=params) as response:
+        async with session.get(f"{NAZRIYA_API_BASE}/{endpoint}", params=params) as response:
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "")
             if "json" in content_type.lower():
@@ -173,6 +176,10 @@ async def download_track(track: Track) -> Path:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(track.url) as response:
                 response.raise_for_status()
+                content_type = response.headers.get("Content-Type", "").lower()
+                if not (content_type.startswith(("audio/", "video/")) or
+                        "octet-stream" in content_type or "mpegurl" in content_type):
+                    raise ValueError(f"Nazriya URL did not return an audio/video file (Content-Type: {content_type or 'unknown'}).")
                 length = int(response.headers.get("Content-Length", "0"))
                 if length and length > MAX_DOWNLOAD_MB * 1024 * 1024:
                     raise ValueError(f"Media exceeds the {MAX_DOWNLOAD_MB} MB download limit.")
@@ -294,8 +301,12 @@ async def command_handler(_, message):
         if not args:
             await status_message(message, "Usage: `/music <song>`")
             return
-        query_data = args.encode("utf-8")[:40].decode("utf-8", "ignore")
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Audio", callback_data=f"music:audio:{query_data}"), InlineKeyboardButton("Video", callback_data=f"music:video:{query_data}")]])
+        token = secrets.token_urlsafe(6)
+        pending_music_choices[token] = (chat_id, args)
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Audio", callback_data=f"music:audio:{token}"),
+            InlineKeyboardButton("Video", callback_data=f"music:video:{token}")
+        ]])
         await message.reply_text(f"Choose a format for **{args}**:", reply_markup=keyboard, quote=True)
     elif command == "/search":
         if not args:
@@ -309,9 +320,11 @@ async def command_handler(_, message):
             if not titles:
                 titles = [track.title for track in tracks_from_payload(payload, args, "audio")]
             if not titles:
-                titles = [track.title for track in await lookup(args, "audio")]
+                await wait.edit_text("Nazriya returned no readable search results. Try another title.")
+                return
             lines = [f"{i}. {title}" for i, title in enumerate(titles[:10], 1)]
-            await wait.edit_text("**Search results**\n" + "\n".join(lines))
+            await wait.edit_text("**Search results**\n" + "\n".join(lines) +
+                                 "\n\nUse /play or /video followed by the title to queue playback.")
         except Exception as exc:
             await wait.edit_text(f"Search failed: {exc}")
     elif command == "/pause":
@@ -393,7 +406,12 @@ async def music_choice(_, callback):
     if not callback.message or not callback.message.chat:
         await callback.answer("This button is no longer available.", show_alert=True)
         return
-    _, kind, query = callback.data.split(":", 2)
+    _, kind, token = callback.data.split(":", 2)
+    choice = pending_music_choices.pop(token, None)
+    if not choice or choice[0] != callback.message.chat.id:
+        await callback.answer("This music choice expired. Run /music again.", show_alert=True)
+        return
+    _, query = choice
     await callback.answer()
     await enqueue(callback.message, query, kind)
 
