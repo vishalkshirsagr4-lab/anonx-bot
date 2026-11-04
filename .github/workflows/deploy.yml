@@ -37,7 +37,7 @@ jobs:
             TURSO_AUTH_TOKEN
             OWNER_ID
             OWNER_IDS
-            GROQ_API_KEY
+            GROQ_API_KEY\n            NAZRIYA_API_KEY\n            PLAYER_API_URL\n            PLAYER_API_SECRET
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
@@ -46,4 +46,4 @@ jobs:
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
           OWNER_IDS: ${{ secrets.OWNER_IDS || secrets.OWNER_ID }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}\n          NAZRIYA_API_KEY: ${{ secrets.NAZRIYA_API_KEY }}\n          PLAYER_API_URL: ${{ secrets.PLAYER_API_URL }}\n          PLAYER_API_SECRET: ${{ secrets.PLAYER_API_SECRET }}
