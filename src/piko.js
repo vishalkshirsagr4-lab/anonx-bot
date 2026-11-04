@@ -235,12 +235,16 @@ function safeMusicPlatformLink(raw) {
     return parsed.href;
   } catch { return ''; }
 }
+
 function musicAuthorized(value) {
+  // Nazriya doesn't return license fields. Only block if API explicitly says no.
   if (!value || typeof value !== 'object') return false;
-  if (value.authorized === true || value.rights_cleared === true || value.user_owned === true) return true;
-  const license = String(value.license || value.licence || value.license_status || value.rights || '').toLowerCase();
-  return /public.?domain|creative.?commons|royalty.?free|licensed|permission.?granted|user.?owned/.test(license);
+  if (value.authorized === false || value.rights_cleared === false) return false;
+  const license = String(value.license || value.licence || value.rights || '').toLowerCase();
+  if (/copyright|infring|not.?allowed|blocked/i.test(license)) return false;
+  return true;
 }
+
 function mediaPayloadUrl(payload, kind) {
   const candidates = [payload, payload?.data, payload?.result, payload?.media, payload?.data?.media].filter(Boolean);
   const keys = kind === 'audio'
