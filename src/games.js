@@ -6,7 +6,22 @@ import { tg } from './telegram.js';
 import { esc } from './helpers.js';
 import { generateGameContent } from './piko.js';
 
-// No hardcoded question bank: choice games must use fresh Groq content.
+// Groq is the primary generator. A small local emoji fallback keeps /emoji
+// playable during provider outages or when the model returns invalid JSON.
+const EMOJI_FALLBACK = [
+  { q: 'Guess the movie: 🦁👑🌅', a: ['The Lion King','Madagascar','Finding Nemo','Kung Fu Panda'], c: 0 },
+  { q: 'Guess the game: 🍄👨🏻‍🔧🏁', a: ['Sonic the Hedgehog','Minecraft','Super Mario','Among Us'], c: 2 },
+  { q: 'Guess the anime: 🍥🦊🥷', a: ['One Piece','Naruto','Dragon Ball','Bleach'], c: 1 },
+  { q: 'Guess the movie: 🚢🧊💔', a: ['Avatar','Titanic','Frozen','Jaws'], c: 1 },
+  { q: 'Guess the game: ⛏️🧱💎', a: ['Roblox','Minecraft','Fortnite','Terraria'], c: 1 },
+  { q: 'Guess the anime: 🏴‍☠️👒🍖', a: ['One Piece','Demon Slayer','Pokemon','Attack on Titan'], c: 0 },
+  { q: 'Guess the movie: ❄️👸⛄', a: ['Moana','Frozen','Tangled','Shrek'], c: 1 },
+  { q: 'Guess the game: 🚌🏝️🔫', a: ['Free Fire','Fortnite','PUBG Mobile','Clash Royale'], c: 1 },
+  { q: 'Guess the anime: ⚡🐭🔴⚪', a: ['Digimon','Pokemon','Beyblade','Doraemon'], c: 1 },
+  { q: 'Guess the movie: 🕷️🧑‍🦱🏙️', a: ['Batman','Spider-Man','Iron Man','Superman'], c: 1 },
+  { q: 'Guess the game: 🧑‍🚀🔴🗳️', a: ['Among Us','Fall Guys','Stumble Guys','Brawl Stars'], c: 0 },
+  { q: 'Guess the anime: 🗡️🌊🦋', a: ['Jujutsu Kaisen','Demon Slayer','Bleach','One Punch Man'], c: 1 }
+];
 
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const key = (chatId) => 'game:active:' + chatId;
@@ -50,7 +65,15 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
       // Retry malformed or temporarily failed generations instead of ending the game immediately.
     }
   }
+  if (!item && type === 'emoji') {
+    const normalize = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const available = EMOJI_FALLBACK.filter(candidate =>
+      !used.some(previous => normalize(previous) === normalize(candidate.q))
+    );
+    if (available.length) item = available[Math.floor(Math.random() * available.length)];
+  }
   if (!item) {
+    console.error('Game question unavailable:', { type, topic, groqConfigured: !!env?.GROQ_API_KEY });
     return send(env, chatId, '⚠️ I could not create a fresh question right now. Please try again in a moment.');
   }
   const nextRecent = [...used, item.q].slice(-30);
