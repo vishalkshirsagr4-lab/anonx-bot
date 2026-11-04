@@ -732,10 +732,29 @@ export async function handlePikoAI(msg,env){
   try{
     void tg(env,'sendChatAction',{chat_id:msg.chat.id,action:'typing'}).catch(()=>{});
     const answer=await groqChat(env,msg.from.id,msg.text);
-    await reply(env,msg.chat.id,prefix+esc(answer),groupReply);
+    const caption = prefix + esc(answer);
+    const photo = await tg(env, 'sendPhoto', {
+      chat_id: msg.chat.id,
+      photo: 'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/pippo.jpg',
+      caption: caption.length <= 1000 ? caption : '👋 Piko is here!\n' + caption.slice(0, 970),
+      parse_mode: 'HTML',
+      ...groupReply
+    });
+    if (!photo.ok) {
+      console.error('Piko mention photo failed:', photo.description || 'sendPhoto failed');
+      await reply(env,msg.chat.id,prefix+esc(answer),groupReply);
+    }
   }catch(e){
     console.error('Piko AI request failed:',e?.message||String(e));
-    await reply(env,msg.chat.id,prefix+'Piko AI is temporarily unavailable. Please try again later.',groupReply);
+    const fallback = prefix+'Piko AI is temporarily unavailable. Please try again later.';
+    const photo = await tg(env, 'sendPhoto', {
+      chat_id: msg.chat.id,
+      photo: 'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/pippo.jpg',
+      caption: fallback,
+      parse_mode: 'HTML',
+      ...groupReply
+    });
+    if (!photo.ok) await reply(env,msg.chat.id,fallback,groupReply);
   }
   return true;
 }
