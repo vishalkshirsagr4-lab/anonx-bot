@@ -635,7 +635,67 @@ async function adminCommand(env,msg,cmd){
   return true;
 }
 
-const PIKO_COMMANDS=new Set(['sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','song','video','admin','stats','addcredits','addcoins','gban','ungban']);
+function parseTelegramMessageLink(raw) {
+  let url;
+  try { url = new URL(raw); } catch { return null; }
+  if (!['t.me', 'www.t.me', 'telegram.me', 'www.telegram.me'].includes(url.hostname.toLowerCase())) return null;
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (parts[0] === 'c') {
+    if (parts.length < 3 || !/^\\d+$/.test(parts[1])) return null;
+    const chatId = '-100' + parts[1];
+    if (parts.length >= 4 && /^\\d+$/.test(parts[2]) && /^\\d+$/.test(parts[3])) {
+      return { chatId, threadId: Number(parts[2]), messageId: Number(parts[3]) };
+    }
+    if (!/^\\d+$/.test(parts[2])) return null;
+    return { chatId, messageId: Number(parts[2]) };
+  }
+  if (parts.length < 2 || !/^[a-zA-Z0-9_]{5,}$/.test(parts[0])) return null;
+  if (parts.length >= 3 && /^\\d+$/.test(parts[1]) && /^\\d+$/.test(parts[2])) {
+    return { chatId: '@' + parts[0], threadId: Number(parts[1]), messageId: Number(parts[2]) };
+  }
+  if (!/^\\d+$/.test(parts[1])) return null;
+  return { chatId: '@' + parts[0], messageId: Number(parts[1]) };
+}
+
+async function replyByMessageLink(env, msg, cmd) {
+  const raw = String(cmd.arg || '').trim();
+  const linkMatch = raw.match(/https?:\\/\\/(?:www\\.)?(?:t\\.me|telegram\\.me)\\/[a-zA-Z0-9_/-]+(?:\\?[^\\s]*)?/i);
+  const link = linkMatch?.[0]?.replace(/[),.!?]+$/, '');
+  const target = link ? parseTelegramMessageLink(link) : null;
+  if (!target || !Number.isSafeInteger(target.messageId) || target.messageId <= 0) {
+    return reply(env, msg.chat.id,
+      '❌ Invalid Telegram message link.\n\nUsage:\n/reply <message_link> <text>\n/reply <text> <message_link>\n/reply <message_link> (copies the linked message, including media).',
+      { reply_to_message_id: msg.message_id });
+  }
+  const text = linkMatch ? (raw.slice(0, linkMatch.index) + raw.slice(linkMatch.index + linkMatch[0].length)).trim() : '';
+  const thread = target.threadId ? { message_thread_id: target.threadId } : {};
+  let result;
+  if (text) {
+    result = await tg(env, 'sendMessage', {
+      chat_id: target.chatId,
+      text: text.slice(0, 4096),
+      reply_to_message_id: target.messageId,
+      ...thread
+    });
+  } else {
+    result = await tg(env, 'copyMessage', {
+      chat_id: target.chatId,
+      from_chat_id: target.chatId,
+      message_id: target.messageId,
+      ...thread
+    });
+  }
+  if (!result?.ok) {
+    const detail = result?.description || 'The bot may not have access to that chat or message.';
+    return reply(env, msg.chat.id, '❌ Could not reply: ' + esc(detail), { reply_to_message_id: msg.message_id });
+  }
+  return reply(env, msg.chat.id, text
+    ? '✅ Your reply was sent to the linked message.'
+    : '✅ The linked message was copied (media is supported).',
+    { reply_to_message_id: msg.message_id });
+}
+
+const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','song','video','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -643,6 +703,7 @@ export async function handlePikoDM(msg,env,cmd){
   if(await banned(env,msg.from.id))return true;
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     await profile(env,msg.from);
+    if(cmd.name==='reply'){await replyByMessageLink(env,msg,cmd);return true;}
     if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
     if(['search','music','play','song','video'].includes(cmd.name)){await musicSearchCommand(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
@@ -740,5 +801,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
 }
