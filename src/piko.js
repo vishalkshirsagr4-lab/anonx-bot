@@ -141,6 +141,7 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
       temperature: 0.85,
       max_completion_tokens: 700,
       reasoning_effort: 'low',
+      reasoning_format: 'hidden',
       response_format: { type: 'json_object' }
     })
   });
