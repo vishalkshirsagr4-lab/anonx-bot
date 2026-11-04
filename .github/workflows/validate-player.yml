@@ -1,0 +1,26 @@
+name: Validate Piko group-call player
+
+on:
+  push:
+    branches: [feature/piko-group-call-player]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check JavaScript syntax
+        run: |
+          for file in src/*.js test/*.js; do
+            node --check "$file"
+          done
+      - name: Check player service Python syntax
+        run: python -m compileall -q player_service

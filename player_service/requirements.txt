@@ -1,0 +1,5 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+aiohttp>=3.9,<4
+pyrogrammod>=2.1.2
+py-tgcalls>=2.2.0

@@ -283,97 +283,79 @@ async function searchNazriya(env, query) {
   return musicItems(await fetchNazriyaJson(url.toString())).slice(0, 5);
 }
 
-async function sendNazriyaMedia(env, msg, query, kind) {
-  const endpoint = new URL(NAZRIYA_API_BASE + (kind === 'audio' ? '/audio' : '/video'));
-  endpoint.searchParams.set('q', String(query || '').trim().slice(0, 120));
-  endpoint.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
-
-  let response;
+async function playerRequest(env, path, payload = null, method = 'POST') {
+  const base = String(env?.PLAYER_API_URL || '').trim().replace(/\/+$/, '');
+  const secret = String(env?.PLAYER_API_SECRET || '').trim();
+  if (!base || !secret) {
+    return { ok: false, error: 'Piko group-call player is not configured. Set PLAYER_API_URL and PLAYER_API_SECRET on the Worker.' };
+  }
   try {
-    response = await fetch(endpoint.toString(), { signal: AbortSignal.timeout(60000) });
-  } catch (e) {
-    console.error('[nazriya] fetch failed:', endpoint.toString(), e.message);
-    return { ok: false, reason: 'Media API request failed: ' + e.message };
-  }
-
-  if (!response.ok) {
-    console.error('[nazriya] HTTP error:', response.status, response.statusText);
-    return { ok: false, reason: 'Media API returned HTTP ' + response.status };
-  }
-
-  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-  console.log('[nazriya] content-type:', contentType);
-
-  // Two cases:
-  // 1) API returns the media file directly (content-type is audio/* or video/*, or octet-stream for mp4)
-  // 2) API returns JSON with a download URL inside
-  let blob;
-
-  if (contentType.startsWith('audio/') || contentType.startsWith('video/') ||
-      contentType.includes('octet-stream') || contentType.includes('mpegurl')) {
-    blob = await response.blob();
-  } else {
-    // Try JSON: the API might return { url: "..." }
-    let payload;
-    try {
-      payload = await response.json();
-    } catch (e) {
-      // Neither media nor JSON — grab a preview so we can diagnose
-      const text = await response.text().catch(() => '');
-      console.error('[nazriya] unexpected response:', text.slice(0, 300));
-      return { ok: false, reason: 'Unexpected API response (not media, not JSON).' };
+    const response = await fetch(base + path, {
+      method,
+      headers: {
+        Authorization: 'Bearer ' + secret,
+        ...(payload ? { 'Content-Type': 'application/json' } : {})
+      },
+      ...(payload ? { body: JSON.stringify(payload) } : {}),
+      signal: AbortSignal.timeout(18000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) {
+      return { ok: false, error: String(data.detail || data.error || 'Playback service request failed.') };
     }
-    console.log('[nazriya] payload:', JSON.stringify(payload).slice(0, 400));
-    const mediaUrl = mediaPayloadUrl(payload, kind);
-    if (!mediaUrl) return { ok: false, reason: 'No direct HTTPS media URL in API response.' };
-    const mediaResponse = await fetch(mediaUrl, { signal: AbortSignal.timeout(60000) });
-    if (!mediaResponse.ok) return { ok: false, reason: 'Media source HTTP ' + mediaResponse.status };
-    blob = await mediaResponse.blob();
+    return { ok: true, data };
+  } catch (error) {
+    console.error('[piko-player] request failed:', String(error?.message || error));
+    return { ok: false, error: 'Playback service is offline or unreachable.' };
   }
-
-  if (!blob.size) return { ok: false, reason: 'Empty media file.' };
-  if (blob.size > 45 * 1024 * 1024) {
-    return { ok: false, reason: 'File is ' + (blob.size / 1024 / 1024).toFixed(1) + ' MB, exceeds 45 MB Telegram limit.' };
-  }
-
-  const title = String(query || 'Piko music').slice(0, 900);
-  const method = kind === 'audio' ? 'sendAudio' : 'sendVideo';
-  const field = kind === 'audio' ? 'audio' : 'video';
-  // Use .mp4 for both — Telegram accepts mp4 container for audio when the file is actually mp4
-  const ext = blob.type === 'audio/mpeg' || contentType.startsWith('audio/') ? 'mp3' : 'mp4';
-
-  const sent = await tgForm(env, method, {
-  chat_id: msg.chat.id,
-  caption: `🎵 <b>${esc(title)}</b>`,
-  parse_mode: 'HTML',
-  reply_to_message_id: msg.message_id
-}, field, blob, 'piko.' + ext);
-
-if (!sent?.ok && /repl(y|ied).*not found|message to be repl/i.test(sent?.description || '')) {
-  // Original /play message was deleted — send without reply
-  const retry = await tgForm(env, method, {
-    chat_id: msg.chat.id,
-    caption: `🎵 <b>${esc(title)}</b>`,
-    parse_mode: 'HTML'
-  }, field, blob, 'piko.' + ext);
-  if (retry?.ok) return { ok: true };
-  console.error('[nazriya] Telegram retry failed:', retry?.description);
-  return { ok: false, reason: 'Telegram: ' + (retry?.description || 'unknown') };
 }
 
-  if (!sent?.ok) {
-    console.error('[nazriya] Telegram send failed:', sent?.description);
-    return { ok: false, reason: 'Telegram: ' + (sent?.description || 'unknown') };
-  }
-  return { ok: true };
+function musicTitle(item) {
+  return musicField(item, ['title','name','song','track']) || 'Unknown title';
 }
 
+async function musicControlCommand(env, msg, cmd) {
+  const chatId = Number(msg.chat.id);
+  if (!Number.isSafeInteger(chatId)) return reply(env, msg.chat.id, '❌ Invalid group ID.');
+  if (cmd.name === 'queue') {
+    const result = await playerRequest(env, '/v1/queue?chat_id=' + encodeURIComponent(String(chatId)), null, 'GET');
+    if (!result.ok) return reply(env, msg.chat.id, '⚠️ ' + esc(result.error));
+    const current = result.data.current;
+    const upcoming = Array.isArray(result.data.upcoming) ? result.data.upcoming : [];
+    const lines = upcoming.map((item, index) => (index + 1) + '. ' + esc(item.title || 'Untitled') + ' [' + esc(item.kind || 'audio') + ']');
+    return reply(env, msg.chat.id,
+      '🎧 <b>Piko queue</b>\n\n' +
+      (current ? (result.data.paused ? '⏸ Paused: ' : '▶️ Now playing: ') + '<b>' + esc(current.title || 'Unknown') + '</b>\n\n' : 'Nothing is currently playing.\n\n') +
+      (lines.length ? '<b>Up next</b>\n' + lines.join('\n') : 'Queue is empty.'));
+  }
+  if (cmd.name === 'volume') {
+    const volume = Number(String(cmd.arg || '').trim());
+    if (!Number.isInteger(volume) || volume < 1 || volume > 200) {
+      return reply(env, msg.chat.id, 'Usage: <code>/volume 50</code> (choose 1–200).');
+    }
+    const result = await playerRequest(env, '/v1/control', { chat_id: chatId, action: 'volume', volume });
+    return reply(env, msg.chat.id, result.ok ? '🔊 ' + esc(result.data.message || ('Volume set to ' + volume + '%.')) : '⚠️ ' + esc(result.error));
+  }
+  const actions = { pause: 'pause', resume: 'resume', skip: 'skip', stop: 'stop', leave: 'leave' };
+  const action = actions[cmd.name];
+  if (!action) return false;
+  const result = await playerRequest(env, '/v1/control', { chat_id: chatId, action });
+  return reply(env, msg.chat.id, (result.ok ? '🎵 ' : '⚠️ ') + esc(result.data?.message || result.error || 'Playback command completed.'));
+}
 
 async function musicSearchCommand(env, msg, cmd) {
+  const groupOnly = ['play','song','video','pause','resume','skip','stop','queue','volume','leave'].includes(cmd.name);
+  if (groupOnly && !['group','supergroup'].includes(msg.chat.type)) {
+    return reply(env, msg.chat.id, '🎧 Group-call playback commands must be used inside a Telegram group.');
+  }
   const query = String(cmd.arg || '').trim().slice(0, 120);
-  if (!query) return reply(env, msg.chat.id, '🎵 <b>Piko Music</b>\n\n/search song — search metadata\n/play song — send authorized audio to this group\n/song song — same as /play\n/video song — send authorized video to this group\n/music song — send authorized audio and video');
-  const apiKey = String(env?.NAZRIYA_API_KEY || '').trim();
-  if (!apiKey) return reply(env, msg.chat.id, '⚙️ Music search is not configured. Add <code>NAZRIYA_API_KEY</code> as a Cloudflare Worker secret.');
+  const controls = ['pause','resume','skip','stop','queue','volume','leave'];
+  if (controls.includes(cmd.name)) return musicControlCommand(env, msg, cmd);
+  if (!query) return reply(env, msg.chat.id,
+    '🎵 <b>Piko Music</b>\n\n/search song — search songs\n/play song — queue audio in the group call\n/song song — alias for /play\n/video song — queue video in the group call\n/music song — show audio/video choices\n/pause, /resume, /skip, /stop, /queue, /volume 50, /leave');
+  if (!String(env?.NAZRIYA_API_KEY || '').trim()) {
+    return reply(env, msg.chat.id, '⚙️ Music search is not configured. Add <code>NAZRIYA_API_KEY</code> as a Cloudflare Worker secret.');
+  }
   const status = await reply(env, msg.chat.id, '🔎 Searching music…', { reply_to_message_id: msg.message_id });
   if (!status?.ok || !status.result?.message_id) return true;
   const statusId = status.result.message_id;
@@ -387,41 +369,39 @@ async function musicSearchCommand(env, msg, cmd) {
       return true;
     }
     if (cmd.name === 'search') {
-      const lines = items.map((item, i) => {
-        const title = musicField(item, ['title','name','song','track']) || 'Unknown title';
-        const uploader = musicField(item, ['uploader','artist','author','singer']) || 'Artist not listed';
+      const lines = items.map((item, index) => {
+        const title = musicTitle(item);
+        const artist = musicField(item, ['uploader','artist','author','singer']) || 'Artist not listed';
         const duration = Number(item.duration);
-        return (i + 1) + '. <b>' + esc(title.slice(0, 140)) + '</b>\n   👤 ' + esc(uploader.slice(0, 100)) +
-          (Number.isFinite(duration) && duration > 0 ? '\n   ⏱ ' + Math.floor(duration / 60) + ':' + String(duration % 60).padStart(2,'0') : '');
+        const platform = safeMusicPlatformLink(musicField(item, ['youtube_url','youtube','spotify_url','spotify','official_url','url']));
+        return (index + 1) + '. <b>' + esc(title.slice(0, 140)) + '</b>\n   👤 ' + esc(artist.slice(0, 100)) +
+          (Number.isFinite(duration) && duration > 0 ? '\n   ⏱ ' + Math.floor(duration / 60) + ':' + String(duration % 60).padStart(2,'0') : '') +
+          (platform ? '\n   🔗 ' + '<a href="' + esc(platform) + '">Official platform link</a>' : '');
       });
-      await editStatus('🔎 <b>Matching music results</b>\n\n' + lines.join('\n\n') +
-        '\n\nUse /play ' + esc(query) + ' or /video ' + esc(query) + ' for authorized media.');
+      await editStatus('🔎 <b>Matching songs</b>\n\n' + lines.join('\n\n') +
+        '\n\nUse /play ' + esc(query) + ' to request audio or /video ' + esc(query) + ' for video.');
       return true;
     }
-    const selected = items[0];
-       const title = musicField(selected, ['title','name','song','track']) || 'Selected result';
-       await editStatus('🎵 Selected: <b>' + esc(title.slice(0, 140)) + '</b>\nPreparing authorized media for this group…');
-       const kinds = cmd.name === 'video' ? ['video']
-           : cmd.name === 'music' ? ['audio','video'] : ['audio'];
-   let sentCount = 0;
-const failures = [];
-for (const kind of kinds) {
-  try {
-    const result = await sendNazriyaMedia(env, msg, query, kind);
-        if (result.ok) sentCount++;
-        else failures.push((kind === 'audio' ? 'Audio: ' : 'Video: ') + result.reason);
-      } catch (error) {
-        console.error('Piko ' + kind + ' delivery failed:', String(error?.message || error).slice(0, 180));
-        failures.push((kind === 'audio' ? 'Audio: ' : 'Video: ') + 'provider or Telegram delivery failed.');
-      }
+    if (cmd.name === 'music') {
+      const title = musicTitle(items[0]);
+      await editStatus('🎵 <b>' + esc(title.slice(0, 140)) + '</b>\n\nChoose playback type:\n🎧 Audio: <code>/play ' + esc(query) + '</code> (or <code>/song ' + esc(query) + '</code>)\n🎬 Video: <code>/video ' + esc(query) + '</code>\n\nChoose one command above to request group-call playback. Media must have verifiable playback permission.');
+      return true;
     }
-    if (sentCount) {
-      await editStatus('✅ Sent ' + sentCount + ' playable media item' + (sentCount === 1 ? '' : 's') + ' to this group.' +
-        (failures.length ? '\n\n' + failures.map(esc).join('\n') : ''));
-    } else {
-      await editStatus('⚠️ No playable media was sent.\n\n' + failures.map(esc).join('\n') +
-        '\n\nThe search result must explicitly identify public-domain, licensed, or user-owned media, and the media endpoint must return a direct audio/video file.');
+    const kind = cmd.name === 'video' ? 'video' : 'audio';
+    const queued = await playerRequest(env, '/v1/play', {
+      chat_id: Number(msg.chat.id),
+      query,
+      kind,
+      requested_by: String(msg.from.username ? '@' + msg.from.username : msg.from.first_name || 'group member').slice(0, 80)
+    });
+    if (!queued.ok) {
+      await editStatus('⚠️ Could not queue ' + kind + ': ' + esc(queued.error));
+      return true;
     }
+    const data = queued.data;
+    await editStatus(data.queued
+      ? '➕ Added to the group-call queue at position <b>' + Number(data.position) + '</b>: <b>' + esc(data.title || query) + '</b>'
+      : '▶️ Now playing in the group call: <b>' + esc(data.playing || query) + '</b>');
   } catch (error) {
     console.error('Piko music command failed:', String(error?.message || error).slice(0, 180));
     await editStatus('⚠️ Music service is temporarily unavailable. Please try again later.');
@@ -752,7 +732,7 @@ async function replyByMessageLink(env, msg, cmd) {
     { reply_to_message_id: msg.message_id });
 }
 
-const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','song','video','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','song','video','pause','resume','skip','stop','queue','volume','leave','stopfilter','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -762,7 +742,7 @@ export async function handlePikoDM(msg,env,cmd){
     await profile(env,msg.from);
     if(cmd.name==='reply'){await replyByMessageLink(env,msg,cmd);return true;}
     if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
-    if(['search','music','play','song','video'].includes(cmd.name)){await musicSearchCommand(env,msg,cmd);return true;}
+    if(['search','music','play','song','video','pause','resume','skip','stop','queue','volume','leave'].includes(cmd.name)){await musicSearchCommand(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
     if(['ship','roll','hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
@@ -859,5 +839,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song, /pause, /resume, /skip, /stop, /queue, /volume 50, /leave (group-call player)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stopfilter, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban';
 }
