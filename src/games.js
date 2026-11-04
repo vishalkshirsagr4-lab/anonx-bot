@@ -27,50 +27,79 @@ const buttons = (gameId, items, prefix) => ({
 });
 
 async function startChoiceGame(env, chatId, from, type, topic = '') {
-  // Every /emoji round must come from Groq. Keep a long per-chat history
-  // and send it to the model so it can avoid repeating previous questions.
-  const recentKey = 'game:recent:' + chatId + ':' + type;
-  const recent = await kvGet(env, recentKey, true);
-  const used = Array.isArray(recent) ? recent : [];
-  let item = null;
-  const normalizeQuestion = value => String(value || '').toLowerCase().normalize('NFKC')
-    .replace(/[^\p{L}\p{N}\p{Extended_Pictographic}]+/gu, ' ').trim();
-  // Retry AI generation when the provider returns invalid or repeated content.
-  for (let attempt = 0; attempt < 5 && !item; attempt++) {
-    try {
-      const fresh = await generateGameContent(
-        env, type,
-        attempt ? topic + ' (completely different fresh idea; variation ' + attempt + ')' : topic,
-        used.slice(-100)
-      );
-      if (!fresh || typeof fresh.q !== 'string' || !fresh.q.trim() ||
-          !Array.isArray(fresh.a) || fresh.a.length !== 4 ||
-          !Number.isInteger(fresh.c) || fresh.c < 0 || fresh.c > 3 ||
-          fresh.a.some(x => typeof x !== 'string' || !x.trim())) continue;
-      const normalized = normalizeQuestion(fresh.q);
-      const duplicate = used.some(previous => normalizeQuestion(previous) === normalized);
-      if (!duplicate) item = fresh;
-    } catch (error) {
-      console.error('Groq game generation failed:', error?.message || String(error));
+  const lockKey = 'game:start:' + chatId;
+  const lockId = crypto.randomUUID().replace(/-/g, '');
+  const now = Date.now();
+  const lock = await q(env,
+    `INSERT INTO kv_store(key,value,expires_at) VALUES(?,?,?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value,expires_at=excluded.expires_at
+     WHERE kv_store.expires_at IS NULL OR kv_store.expires_at <= ?`,
+    [lockKey, lockId, now + 90000, now]
+  );
+  if (lock.rowsAffected !== 1) {
+    return send(env, chatId, '⏳ A new game is already being prepared. Please wait a moment.');
+  }
+
+  try {
+    const recentKey = 'game:recent:' + chatId + ':' + type;
+    const recent = await kvGet(env, recentKey, true);
+    const used = Array.isArray(recent) ? recent : [];
+    let item = null;
+    const normalize = value => String(value || '').toLowerCase().normalize('NFKC')
+      .replace(/[^\p{L}\p{N}\p{Extended_Pictographic}]+/gu, ' ').trim();
+    for (let attempt = 0; attempt < 4 && !item; attempt++) {
+      try {
+        const fresh = await generateGameContent(
+          env, type,
+          attempt ? topic + ' — create a completely different idea, variation ' + attempt : topic,
+          used.slice(-100)
+        );
+        if (type === 'word') {
+          if (!/^[a-z]{6}$/i.test(fresh?.word || '') || typeof fresh?.hint !== 'string' || !fresh.hint.trim()) continue;
+          if (used.some(previous => normalize(previous) === normalize(fresh.word))) continue;
+          item = { word: fresh.word.toLowerCase(), hint: fresh.hint.slice(0, 180) };
+        } else {
+          if (!fresh || typeof fresh.q !== 'string' || !fresh.q.trim() ||
+              !Array.isArray(fresh.a) || fresh.a.length !== 4 ||
+              !Number.isInteger(fresh.c) || fresh.c < 0 || fresh.c > 3 ||
+              fresh.a.some(x => typeof x !== 'string' || !x.trim())) continue;
+          const normalized = normalize(fresh.q);
+          if (used.some(previous => normalize(previous) === normalized)) continue;
+          if (new Set(fresh.a.map(x => normalize(x))).size !== 4) continue;
+          item = fresh;
+        }
+      } catch (error) {
+        console.error('Groq game generation failed:', type, error?.message || String(error));
+      }
     }
-  }
-  if (!item) {
-    console.error('Fresh AI game question unavailable:', {
-      type, topic, groqConfigured: !!env?.GROQ_API_KEY
-    });
+    if (!item) {
+      return send(env, chatId, '⚠️ Groq could not create a valid, fresh question. No game was started. Please try again shortly.');
+    }
+
+    const nextRecent = [...used, type === 'word' ? item.word : item.q].slice(-1000);
+    await kvPut(env, recentKey, nextRecent, 31536000);
+    const id = crypto.randomUUID().replace(/-/g, '');
+    const expires = Date.now() + (type === 'word' ? 300000 : 180000);
+    const session = type === 'word'
+      ? { id, type, word: item.word, hint: item.hint, topic: topic.slice(0, 50), expires }
+      : { id, type, topic: topic.slice(0, 50), answer: item.c, question: item.q, choices: item.a, expires, winner: null };
+    await kvPut(env, key(chatId), session, type === 'word' ? 300 : 180);
+
+    if (type === 'word') {
+      return send(env, chatId,
+        '🔤 <b>AI Word Challenge</b> · ' + esc(topic || 'mixed') +
+        '\n\n🧩 Hint: ' + esc(item.hint) +
+        '\nEach member gets 5 guesses. First member to solve it wins 20 🪙.\nSend a six-letter guess in the group.');
+    }
+    const title = type === 'quiz' ? '🧠 Quick Quiz' : type === 'riddle' ? '🧩 Riddle Time' : '🎭 Emoji Guess';
+    const prefix = type === 'quiz' ? 'gq_' : type === 'riddle' ? 'gr_' : 'ge_';
     return send(env, chatId,
-      '⚠️ Groq could not create a new unique question right now. Please try again shortly.');
+      '<b>' + title + '</b>\n\n' + esc(item.q) +
+      '\n\nEveryone gets one attempt. First correct answer wins 15 🪙. Wrong answers do not end the round.',
+      { reply_markup: buttons(id, item.a, prefix) });
+  } finally {
+    await q(env, 'DELETE FROM kv_store WHERE key=? AND value=?', [lockKey, lockId]);
   }
-  const nextRecent = [...used, item.q].slice(-1000);
-  await kvPut(env, recentKey, nextRecent, 31536000);
-  const id = Date.now().toString(36);
-  const session = { id, type, topic: topic.slice(0,50), answer: item.c, question: item.q, choices: item.a, expires: Date.now() + 120000, winner: false };
-  await kvPut(env, key(chatId), session, 120);
-  const title = type === 'quiz' ? '🧠 Quick Quiz' : type === 'riddle' ? '🧩 Riddle Time' : '🎭 Emoji Guess';
-  const prefix = type === 'quiz' ? 'gq_' : type === 'riddle' ? 'gr_' : 'ge_';
-  return send(env, chatId, '<b>' + title + '</b>\\n\\n' + esc(item.q) + '\\n\\nFirst correct answer wins 15 🪙!', {
-    reply_markup: buttons(id, item.a, prefix)
-  });
 }
 
 export async function handleGameCommand(env, msg, cmd) {
@@ -112,23 +141,7 @@ export async function handleGameCommand(env, msg, cmd) {
       ] } }
     );
   }
-  if (name === 'word') {
-    // A new word game replaces any unfinished game in this chat.
-    const words = ['planet','garden','puzzle','silver','window','rocket','orange','castle','dragon','mystic','naruto','zenits'];
-    let word = pick(words);
-    let hint = 'A common six-letter English word.';
-    try {
-      const fresh = await generateGameContent(env, 'word', cmd.arg || 'mixed');
-      if (typeof fresh?.word === 'string' && /^[a-z]{6}$/i.test(fresh.word)) {
-        word = fresh.word.toLowerCase();
-        hint = typeof fresh.hint === 'string' ? fresh.hint : hint;
-      }
-    } catch (error) { console.error('Groq word generation failed:', error?.message || String(error)); }
-    const id = Date.now().toString(36);
-    const session = { id, type: 'word', word, hint, topic: String(cmd.arg || 'mixed').slice(0, 50), attempts: 5, expires: Date.now() + 180000 };
-    await kvPut(env, key(chatId), session, 180);
-    return send(env, chatId, '🔤 <b>AI Word Guess</b> · ' + esc(cmd.arg || 'mixed') + '\n\n🧩 Hint: ' + esc(hint) + '\nGuess the 6-letter hidden word. You have 5 tries.\nSend your guess as a normal message in this group.');
-  }
+  if (name === 'word') return startChoiceGame(env, chatId, from, 'word', cmd.arg || 'mixed');
   if (name === 'dice') {
     const result = await tg(env, 'sendDice', { chat_id: chatId, emoji: '🎲', reply_to_message_id: msg.message_id });
     const value = result?.result?.dice?.value;
@@ -159,23 +172,39 @@ export async function handleGameMessage(env, msg) {
   const chatId = String(msg.chat.id);
   const session = await kvGet(env, key(chatId), true);
   if (!session || session.type !== 'word') return false;
-  if (session.expires <= Date.now()) { await kvDel(env, key(chatId)); return false; }
-  const guess = msg.text.trim().toLowerCase();
-  if (!/^[a-z]{6}$/.test(guess)) return true;
-  if (guess === session.word) {
+  if (session.expires <= Date.now()) {
     await kvDel(env, key(chatId));
-    await addCoins(env, msg.from.id, 20);
-    await send(env, chatId, '🎉 ' + esc(msg.from.first_name || 'Player') + ' guessed the word and won 20 🪙!');
+    await send(env, chatId, '⌛ Word challenge expired. Start another with /word.');
     return true;
   }
-  session.attempts -= 1;
-  if (session.attempts <= 0) {
-    await kvDel(env, key(chatId));
-    await send(env, chatId, '⌛ Game over! The word was <b>' + esc(session.word) + '</b>.');
-  } else {
-    await kvPut(env, key(chatId), session, Math.max(1, Math.ceil((session.expires-Date.now())/1000)));
-    await send(env, chatId, '❌ Not that word. ' + session.attempts + ' tries left.');
+  const guess = msg.text.trim().toLowerCase();
+  if (!/^[a-z]{6}$/.test(guess)) return false;
+  const prior = await q(env,
+    'SELECT COUNT(*) AS n FROM game_word_guesses WHERE chat_id=? AND game_id=? AND user_id=?',
+    [chatId, session.id, msg.from.id]
+  );
+  if (Number(prior.rows[0]?.n || 0) >= 5) {
+    await send(env, chatId, 'ℹ️ You have used all 5 guesses for this word. Other members can still play.');
+    return true;
   }
+  const inserted = await q(env,
+    `INSERT OR IGNORE INTO game_word_guesses(chat_id,game_id,user_id,message_id,guess,created_at)
+     VALUES(?,?,?,?,?,?)`,
+    [chatId, session.id, msg.from.id, msg.message_id, guess, Date.now()]
+  );
+  if (inserted.rowsAffected !== 1) return true;
+  if (guess === session.word) {
+    const claimed = await claimSession(env, key(chatId), session, { ...session, winner: msg.from.id, status: 'done' });
+    if (!claimed) {
+      await send(env, chatId, 'This word was already solved by another member.');
+      return true;
+    }
+    await addCoins(env, msg.from.id, 20);
+    await send(env, chatId, '🏆 <b>' + esc(msg.from.first_name || 'Player') + '</b> solved the word and won 20 🪙! The answer was <b>' + esc(session.word) + '</b>.');
+    return true;
+  }
+  const used = Number(prior.rows[0]?.n || 0) + 1;
+  await send(env, chatId, '❌ Not quite, ' + esc(msg.from.first_name || 'player') + '. You have ' + Math.max(0, 5 - used) + ' guesses left. Other members can keep playing!');
   return true;
 }
 
@@ -186,21 +215,25 @@ export async function handleGameCallback(env, cq, data) {
   if ((match = data.match(/^g([qre])_([a-z0-9]+)_([0-3])$/))) {
     const session = await kvGet(env, key(chatId), true);
     if (!session || session.id !== match[2] || session.expires <= Date.now() || session.winner) {
-      return { toast: 'This game has ended.', alert: true };
+      return { toast: 'This round has ended.', alert: true };
     }
     const choice = Number(match[3]);
-    const claimed = await claimSession(env, key(chatId), session, { ...session, winner: userId, status: 'done' });
-    if (!claimed) return { toast: 'This question has already been answered.', alert: false };
-    // One attempt per player/question: the first selected option ends the round.
-    await kvDel(env, key(chatId));
-    if (choice === session.answer) {
-      await addCoins(env, userId, 15);
-      await editCq(env, cq, '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\n\n' + esc(session.question));
-      return { toast: 'Correct! +15 coins' };
+    const recorded = await q(env,
+      `INSERT OR IGNORE INTO game_answers(chat_id,game_id,user_id,choice,answered_at)
+       VALUES(?,?,?,?,?)`,
+      [chatId, session.id, userId, choice, Date.now()]
+    );
+    if (recorded.rowsAffected !== 1) return { toast: 'You have already answered this question.', alert: true };
+    if (choice !== session.answer) {
+      return { toast: 'Not quite! Your attempt is used. Others can still answer.', alert: false };
     }
-    const correct = session.choices?.[session.answer] || 'the correct option';
-    await editCq(env, cq, '❌ <b>Game over!</b>\\n' + esc(cq.from.first_name || 'Player') + ' used their one attempt.\\n\\nCorrect answer: <b>' + esc(correct) + '</b>\\n\\n' + esc(session.question));
-    return { toast: 'Wrong answer. Game over!', alert: true };
+    const claimed = await claimSession(env, key(chatId), session, { ...session, winner: userId, status: 'done' });
+    if (!claimed) return { toast: 'Another member answered correctly first.', alert: true };
+    await addCoins(env, userId, 15);
+    await editCq(env, cq,
+      '🏆 <b>' + esc(cq.from.first_name || 'Player') + '</b> got it right! +15 🪙\\n\\n' +
+      esc(session.question) + '\\n\\n<b>Round completed.</b>');
+    return { toast: 'Correct! +15 coins' };
   }
   if (data.startsWith('grpm_join_')) {
     const id = data.slice('grpm_join_'.length);
