@@ -21,9 +21,8 @@ jobs:
 
       - name: Validate JavaScript and build
         run: |
-          node --check src/piko.js
-          node --check src/handlers.js
-          node --check src/callbacks.js
+          for file in src/*.js test/*.js; do node --check "$file"; done
+          npm test
           npm run build
 
       - name: Deploy Worker and upload secrets
