@@ -356,15 +356,15 @@ async function musicSearchCommand(env, msg, cmd) {
       return true;
     }
     const selected = items[0];
-    const title = musicField(selected, ['title','name','song','track']) || 'Selected result';
-    await editStatus('🎵 Selected: <b>' + esc(title.slice(0, 140)) + '</b>\nPreparing authorized media for this group…');
-    const kinds = cmd.name === 'video' ? ['video']
-      : cmd.name === 'music' ? ['audio','video'] : ['audio'];
-    let sentCount = 0;
-    const failures = [];
-    for (const kind of kinds) {
-      try {
-        const result = await sendNazriyaMedia(env, msg, selected, kind);
+       const title = musicField(selected, ['title','name','song','track']) || 'Selected result';
+       await editStatus('🎵 Selected: <b>' + esc(title.slice(0, 140)) + '</b>\nPreparing authorized media for this group…');
+       const kinds = cmd.name === 'video' ? ['video']
+           : cmd.name === 'music' ? ['audio','video'] : ['audio'];
+   let sentCount = 0;
+const failures = [];
+for (const kind of kinds) {
+  try {
+    const result = await sendNazriyaMedia(env, msg, selected, kind);
         if (result.ok) sentCount++;
         else failures.push((kind === 'audio' ? 'Audio: ' : 'Video: ') + result.reason);
       } catch (error) {
@@ -411,7 +411,7 @@ async function economy(env,msg,cmd) {
     const target=msg.reply_to_message?.from, amount=Number(a[0]);
     if(!target||target.is_bot||target.id===id||!Number.isSafeInteger(amount)||amount<1||amount>100000) return reply(env,msg.chat.id,'Reply to a member: /pay amount');
     const sender=await profile(env,msg.from); if((sender.coins||0)<amount)return reply(env,msg.chat.id,'Not enough coins.');
-    await profile(env,target);
+    await profile(env,target); 
     await q(env,'UPDATE users SET coins=coins-? WHERE user_id=?',[amount,id]);await q(env,'UPDATE users SET coins=coins+? WHERE user_id=?',[amount,target.id]);
     return reply(env,msg.chat.id,`✅ Sent ${amount} coins to ${mention(target)}.`);
   }
