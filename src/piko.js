@@ -343,11 +343,23 @@ async function sendNazriyaMedia(env, msg, query, kind) {
   const ext = blob.type === 'audio/mpeg' || contentType.startsWith('audio/') ? 'mp3' : 'mp4';
 
   const sent = await tgForm(env, method, {
+  chat_id: msg.chat.id,
+  caption: `🎵 <b>${esc(title)}</b>`,
+  parse_mode: 'HTML',
+  reply_to_message_id: msg.message_id
+}, field, blob, 'piko.' + ext);
+
+if (!sent?.ok && /repl(y|ied).*not found|message to be repl/i.test(sent?.description || '')) {
+  // Original /play message was deleted — send without reply
+  const retry = await tgForm(env, method, {
     chat_id: msg.chat.id,
     caption: `🎵 <b>${esc(title)}</b>`,
-    parse_mode: 'HTML',
-    reply_to_message_id: msg.message_id
+    parse_mode: 'HTML'
   }, field, blob, 'piko.' + ext);
+  if (retry?.ok) return { ok: true };
+  console.error('[nazriya] Telegram retry failed:', retry?.description);
+  return { ok: false, reason: 'Telegram: ' + (retry?.description || 'unknown') };
+}
 
   if (!sent?.ok) {
     console.error('[nazriya] Telegram send failed:', sent?.description);
