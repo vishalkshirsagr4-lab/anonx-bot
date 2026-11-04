@@ -869,7 +869,7 @@ export async function handlePikoGroup(msg,env,cmd){
     let botInfo = null;
     try { botInfo = await getBotInfo(env); }
     catch (error) { console.error('Piko getMe lookup failed:', error?.message || String(error)); }
-    const username = String(botInfo?.username || 'Piko_Pikobot').replace(/^@/, '').trim().toLowerCase();
+    const username = String(botInfo?.username || env?.BOT_USERNAME || 'Piko_866').replace(/^@/, '').trim().toLowerCase();
     const botName = String(state.BOT_NAME || 'Piko').trim().toLowerCase();
     const text = String(msg.text);
     const lowerText = text.toLowerCase();
