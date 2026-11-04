@@ -16,7 +16,7 @@ const esc = value => String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','
 const mention = user => user.username ? '@'+esc(user.username) : '<a href="tg://user?id='+Number(user.id)+'">'+esc(user.first_name || 'User')+'</a>';
 const argsOf = text => String(text || '').trim().split(/\s+/).filter(Boolean);
 const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
-const groqKey = env => env?.GROQ_API_KEY || '';
+const groqKey = env => String(env?.GROQ_API_KEY || '').trim();
 
 async function ensureSchema(env) {
   if (schemaReady) return;
