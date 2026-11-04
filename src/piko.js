@@ -344,6 +344,10 @@ async function musicControlCommand(env, msg, cmd) {
 }
 
 async function musicSearchCommand(env, msg, cmd) {
+  const groupOnly = ['play','song','video','pause','resume','skip','stop','queue','volume','leave'].includes(cmd.name);
+  if (groupOnly && !['group','supergroup'].includes(msg.chat.type)) {
+    return reply(env, msg.chat.id, '🎧 Group-call playback commands must be used inside a Telegram group.');
+  }
   const query = String(cmd.arg || '').trim().slice(0, 120);
   const controls = ['pause','resume','skip','stop','queue','volume','leave'];
   if (controls.includes(cmd.name)) return musicControlCommand(env, msg, cmd);
