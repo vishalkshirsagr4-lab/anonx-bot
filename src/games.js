@@ -179,20 +179,27 @@ export async function handleGameMessage(env, msg) {
   }
   const guess = msg.text.trim().toLowerCase();
   if (!/^[a-z]{6}$/.test(guess)) return false;
+  const inserted = await q(env,
+    `INSERT INTO game_word_guesses(chat_id,game_id,user_id,message_id,guess,created_at)
+     SELECT ?,?,?,?,?,?
+     WHERE (SELECT COUNT(*) FROM game_word_guesses WHERE chat_id=? AND game_id=? AND user_id=?) < 5
+     ON CONFLICT(chat_id,game_id,user_id,message_id) DO NOTHING`,
+    [chatId, session.id, msg.from.id, msg.message_id, guess, Date.now(), chatId, session.id, msg.from.id]
+  );
+  if (inserted.rowsAffected !== 1) {
+    const count = await q(env,
+      'SELECT COUNT(*) AS n FROM game_word_guesses WHERE chat_id=? AND game_id=? AND user_id=?',
+      [chatId, session.id, msg.from.id]
+    );
+    if (Number(count.rows[0]?.n || 0) >= 5) {
+      await send(env, chatId, 'ℹ️ You have used all 5 guesses for this word. Other members can still play.');
+    }
+    return true;
+  }
   const prior = await q(env,
     'SELECT COUNT(*) AS n FROM game_word_guesses WHERE chat_id=? AND game_id=? AND user_id=?',
     [chatId, session.id, msg.from.id]
   );
-  if (Number(prior.rows[0]?.n || 0) >= 5) {
-    await send(env, chatId, 'ℹ️ You have used all 5 guesses for this word. Other members can still play.');
-    return true;
-  }
-  const inserted = await q(env,
-    `INSERT OR IGNORE INTO game_word_guesses(chat_id,game_id,user_id,message_id,guess,created_at)
-     VALUES(?,?,?,?,?,?)`,
-    [chatId, session.id, msg.from.id, msg.message_id, guess, Date.now()]
-  );
-  if (inserted.rowsAffected !== 1) return true;
   if (guess === session.word) {
     const claimed = await claimSession(env, key(chatId), session, { ...session, winner: msg.from.id, status: 'done' });
     if (!claimed) {
@@ -203,7 +210,7 @@ export async function handleGameMessage(env, msg) {
     await send(env, chatId, '🏆 <b>' + esc(msg.from.first_name || 'Player') + '</b> solved the word and won 20 🪙! The answer was <b>' + esc(session.word) + '</b>.');
     return true;
   }
-  const used = Number(prior.rows[0]?.n || 0) + 1;
+  const used = Number(prior.rows[0]?.n || 0);
   await send(env, chatId, '❌ Not quite, ' + esc(msg.from.first_name || 'player') + '. You have ' + Math.max(0, 5 - used) + ' guesses left. Other members can keep playing!');
   return true;
 }
