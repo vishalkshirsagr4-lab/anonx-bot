@@ -49,7 +49,7 @@ async function startChoiceGame(env, chatId, from, type, topic = '') {
   const used = Array.isArray(recent) ? recent : [];
   let item = null;
   // Ask Groq again if it returns a recently-used question.
-  for (let attempt = 0; attempt < 2 && !item; attempt++) {
+  for (let attempt = 0; type !== 'emoji' && attempt < 2 && !item; attempt++) {
     try {
       const fresh = await generateGameContent(env, type, attempt ? topic + ' (new variation ' + attempt + ')' : topic, used);
       if (!fresh || typeof fresh.q !== 'string' || !Array.isArray(fresh.a) || fresh.a.length !== 4 ||
