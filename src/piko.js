@@ -535,16 +535,69 @@ async function adminCommand(env,msg,cmd){
   if(cmd.name==='admin'||cmd.name==='stats'){
     await ensureSchema(env);
     const [u,g,b]=await Promise.all([q(env,'SELECT COUNT(*) n FROM users'),q(env,'SELECT COUNT(*) n FROM groups'),q(env,'SELECT COUNT(*) n FROM piko_bans')]);
-    return reply(env,msg.chat.id,`👑 <b>Piko Admin</b>\nUsers: ${u.rows[0].n}\nGroups: ${g.rows[0].n}\nBanned: ${b.rows[0].n}\n\n/addcredits user_id amount\n/addcoins user_id amount\n/gban user_id reason\n/ungban user_id`);
+    return reply(env,msg.chat.id,
+      `👑 <b>Piko Admin</b>\nUsers: ${u.rows[0].n}\nGroups: ${g.rows[0].n}\nBanned: ${b.rows[0].n}\n\n<b>Credits and coins</b>\n/addcredits user_id|@username amount\n/addcoins user_id|@username amount\nOr reply to a member's message with /addcredits amount or /addcoins amount.\n\n/gban user_id reason\n/ungban user_id`);
   }
-  const a=argsOf(cmd.arg),id=Number(a[0]),amount=Number(a[1]);
+
   if(cmd.name==='addcredits'||cmd.name==='addcoins'){
-    if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(amount)||amount===0||Math.abs(amount)>1000000)return reply(env,msg.chat.id,'Usage: /'+cmd.name+' user_id amount');
-    await q(env,'INSERT OR IGNORE INTO piko_profiles(user_id,created_at) VALUES(?,?)',[id,Date.now()]);
-    if(cmd.name==='addcredits')await q(env,'UPDATE piko_profiles SET credits=MAX(0,credits+?) WHERE user_id=?',[amount,id]);
-    else {await q(env,'INSERT OR IGNORE INTO users(user_id,first_name,coins,created_at,updated_at) VALUES(?,?,?,?,?)',[id,'',0,Date.now(),Date.now()]);await q(env,'UPDATE users SET coins=MAX(0,coins+?) WHERE user_id=?',[amount,id]);}
-    return reply(env,msg.chat.id,'✅ Updated '+cmd.name+' for user '+id+'.');
+    const parts=argsOf(cmd.arg);
+    const replied=msg.reply_to_message?.from;
+    let targetId=0, targetName='', amountText='';
+
+    // Support replying to a member: /addcredits 100
+    if(replied&&!replied.is_bot&&parts.length===1){
+      targetId=Number(replied.id);
+      targetName=replied.first_name||'Member';
+      amountText=parts[0];
+    }else if(parts.length===2){
+      const targetToken=parts[0];
+      amountText=parts[1];
+      if(/^\d+$/.test(targetToken)){
+        targetId=Number(targetToken);
+      }else if(/^@[A-Za-z0-9_]{5,32}$/.test(targetToken)){
+        const username=targetToken.slice(1);
+        const found=await q(env,
+          'SELECT user_id,first_name,username FROM users WHERE lower(username)=lower(?) LIMIT 1',
+          [username]);
+        if(found.rows.length){
+          targetId=Number(found.rows[0].user_id);
+          targetName=found.rows[0].first_name||found.rows[0].username||'Member';
+        }else{
+          return reply(env,msg.chat.id,
+            '❌ I cannot find '+esc(targetToken)+' in my user database. Ask them to start Piko or send a message to the bot first, then try again.');
+        }
+      }
+    }
+
+    const amount=Number(amountText);
+    if(!Number.isSafeInteger(targetId)||targetId<=0||
+       !/^-?[1-9]\d{0,6}$/.test(amountText||'')||
+       !Number.isSafeInteger(amount)||amount===0||Math.abs(amount)>1000000){
+      return reply(env,msg.chat.id,
+        'ℹ️ <b>Usage</b>\n/addcredits user_id amount\n/addcredits @username amount\n/addcoins user_id amount\n/addcoins @username amount\nOr reply to a member with /addcredits amount or /addcoins amount.');
+    }
+
+    const now=Date.now();
+    await q(env,'INSERT OR IGNORE INTO piko_profiles(user_id,created_at) VALUES(?,?)',[targetId,now]);
+    if(cmd.name==='addcredits'){
+      await q(env,'UPDATE piko_profiles SET credits=MAX(0,credits+?) WHERE user_id=?',[amount,targetId]);
+    }else{
+      await q(env,
+        "INSERT OR IGNORE INTO users(user_id,first_name,coins,created_at,updated_at) VALUES(?,?,0,?,?)",
+        [targetId,targetName,now,now]);
+      await q(env,'UPDATE users SET coins=MAX(0,coins+?),updated_at=? WHERE user_id=?',[amount,now,targetId]);
+    }
+
+    const balance=cmd.name==='addcredits'
+      ? await q(env,'SELECT credits AS balance FROM piko_profiles WHERE user_id=?',[targetId])
+      : await q(env,'SELECT coins AS balance FROM users WHERE user_id=?',[targetId]);
+    const label=cmd.name==='addcredits'?'credits':'coins';
+    const action=amount>0?'Added':'Removed';
+    return reply(env,msg.chat.id,
+      `✅ <b>${action} ${Math.abs(amount)} ${label}.</b>\n👤 User: ${targetName?esc(targetName)+' · ':''}<code>${targetId}</code>\n💰 New balance: <b>${Number(balance.rows[0]?.balance||0)} ${label}</b>`);
   }
+
+  const a=argsOf(cmd.arg),id=Number(a[0]),amount=Number(a[1]);
   if(cmd.name==='gban'){
     if(!Number.isSafeInteger(id)||id<=0)return reply(env,msg.chat.id,'Usage: /gban user_id reason');
     await q(env,'INSERT INTO piko_bans(user_id,reason,created_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET reason=excluded.reason,created_at=excluded.created_at',[id,a.slice(1).join(' ').slice(0,300)||'Owner action',Date.now()]);
@@ -555,9 +608,7 @@ async function adminCommand(env,msg,cmd){
     await q(env,'DELETE FROM piko_bans WHERE user_id=?',[id]);return reply(env,msg.chat.id,'✅ User '+id+' unblocked.');
   }
   return true;
-}
-
-function parseTelegramMessageLink(raw) {
+}function parseTelegramMessageLink(raw) {
   let url;
   try { url = new URL(raw); } catch { return null; }
   if (!['t.me', 'www.t.me', 'telegram.me', 'www.telegram.me'].includes(url.hostname.toLowerCase())) return null;
