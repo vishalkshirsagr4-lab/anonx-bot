@@ -54,6 +54,11 @@ async function reply(env, chatId, text, extra={}) { return tg(env,'sendMessage',
 async function ownerOnly(env, msg) { if (!isOwner(msg.from.id)) { await reply(env,msg.chat.id,'⛔ Owner only.'); return false; } return true; }
 async function banned(env,id) { const r=await q(env,'SELECT 1 FROM piko_bans WHERE user_id=?',[id]); return r.rows.length>0; }
 
+export async function cleanupPikoMemory(env) {
+  // Enforce the configured retention even when a group becomes inactive.
+  await q(env, 'DELETE FROM piko_group_messages WHERE NOT EXISTS (SELECT 1 FROM piko_group_memory_settings s WHERE s.chat_id=piko_group_messages.chat_id AND s.enabled=1 AND piko_group_messages.created_at >= (? - s.retention_days * 86400000))', [Date.now()]);
+}
+
 async function groupMemoryStatus(env, chatId) {
   const r = await q(env, 'SELECT enabled,retention_days,max_messages FROM piko_group_memory_settings WHERE chat_id=?', [String(chatId)]);
   return r.rows[0] || { enabled: 0, retention_days: 30, max_messages: 500 };
