@@ -385,11 +385,9 @@ async function imageCommand(env,msg,cmd){
   if(!prompt)return reply(env,msg.chat.id,'Usage: /img describe your image');
   if(prompt.length>1200)return reply(env,msg.chat.id,'Please keep image prompts under 1,200 characters.');
 
-  // xAI Grok Imagine is the primary image provider. Pollinations is an optional fallback.
-  const xaiKey=String(env?.XAI_API_KEY||env?.GROK_API_KEY||'').trim();
-  const pollinationsKey=String(env?.POLLINATIONS_API_KEY||'').trim();
-  if(!xaiKey&&!pollinationsKey){
-    return reply(env,msg.chat.id,'🖼️ Image generation is not configured. Add XAI_API_KEY (Grok Imagine) in Cloudflare Worker secrets.');
+  // Cloudflare Workers AI binding; no external image-provider API key is required.
+  if(!env?.AI||typeof env.AI.run!=='function'){
+    return reply(env,msg.chat.id,'🖼️ Image generation is not connected yet. The owner needs to add the Workers AI binding named AI in Cloudflare.');
   }
 
   const p=await profile(env,msg.from);
@@ -397,102 +395,29 @@ async function imageCommand(env,msg,cmd){
 
   // Reserve credits atomically so simultaneous /img requests cannot overspend.
   const charge=await q(env,'UPDATE piko_profiles SET credits=credits-5 WHERE user_id=? AND credits>=5',[msg.from.id]);
-  if(!charge.rowsAffected)return reply(env,msg.chat.id,'You need 5 credits. Use /daily to earn coins; ask the owner about credits.');
+  if(!charge.rowsAffected)return reply(env,msg.chat.id,'You need 5 credits. Use /daily to earn coins.');
 
   let status=null;
   try{
-    status=await reply(env,msg.chat.id,'🎨 Piko is creating your image with Grok Imagine…');
-    let blob=null;
-    let provider='Grok Imagine';
+    status=await reply(env,msg.chat.id,'🎨 Piko is creating your image with FLUX.1 Schnell…');
 
-    if(xaiKey){
-      try{
-        const model=String(env?.GROK_IMAGE_MODEL||'grok-imagine-image-2.0').trim();
-        const controller=new AbortController();
-        const timer=setTimeout(()=>controller.abort(),90000);
-        let res;
-        try{
-          res=await fetch('https://api.x.ai/v1/images/generations',{
-            method:'POST',
-            headers:{
-              Authorization:'Bearer '+xaiKey,
-              'Content-Type':'application/json',
-              Accept:'application/json'
-            },
-            body:JSON.stringify({model,prompt}),
-            signal:controller.signal
-          });
-        }finally{
-          clearTimeout(timer);
-        }
-        if(!res.ok){
-          const detail=(await res.text()).slice(0,500);
-          throw new Error('xAI image API HTTP '+res.status+': '+detail);
-        }
-        const data=await res.json();
-        const imageUrl=data?.data?.[0]?.url;
-        if(!imageUrl)throw new Error('xAI returned no image URL: '+JSON.stringify(data).slice(0,500));
+    const model='@cf/black-forest-labs/flux-1-schnell';
+    const result=await env.AI.run(model,{prompt,steps:4});
+    const encoded=typeof result?.image==='string'?result.image:'';
+    if(!encoded)throw new Error('Cloudflare Workers AI returned no image data');
 
-        const imageController=new AbortController();
-        const imageTimer=setTimeout(()=>imageController.abort(),30000);
-        let imageRes;
-        try{
-          imageRes=await fetch(imageUrl,{headers:{Accept:'image/*'},signal:imageController.signal});
-        }finally{
-          clearTimeout(imageTimer);
-        }
-        if(!imageRes.ok)throw new Error('Could not download Grok image: HTTP '+imageRes.status);
-        const contentType=String(imageRes.headers.get('content-type')||'').toLowerCase();
-        if(!contentType.startsWith('image/'))throw new Error('Grok image URL returned non-image content: '+contentType);
-        blob=await imageRes.blob();
-      }catch(grokError){
-        console.error('Piko Grok image provider failed:',grokError?.message||String(grokError));
-        if(!pollinationsKey)throw grokError;
-        provider='Pollinations fallback';
-        const fallbackModel=String(env?.POLLINATIONS_IMAGE_MODEL||'zimage').trim();
-        const fallbackUrl='https://gen.pollinations.ai/image/'+encodeURIComponent(prompt)+'?model='+encodeURIComponent(fallbackModel)+'&width=1024&height=1024';
-        const fallbackController=new AbortController();
-        const fallbackTimer=setTimeout(()=>fallbackController.abort(),90000);
-        let fallbackRes;
-        try{
-          fallbackRes=await fetch(fallbackUrl,{
-            headers:{Authorization:'Bearer '+pollinationsKey,Accept:'image/*'},
-            signal:fallbackController.signal
-          });
-        }finally{
-          clearTimeout(fallbackTimer);
-        }
-        if(!fallbackRes.ok)throw new Error('Grok failed and Pollinations fallback returned HTTP '+fallbackRes.status);
-        const fallbackType=String(fallbackRes.headers.get('content-type')||'').toLowerCase();
-        if(!fallbackType.startsWith('image/'))throw new Error('Pollinations fallback returned non-image content');
-        blob=await fallbackRes.blob();
-      }
-    }else{
-      provider='Pollinations';
-      const model=String(env?.POLLINATIONS_IMAGE_MODEL||'zimage').trim();
-      const url='https://gen.pollinations.ai/image/'+encodeURIComponent(prompt)+'?model='+encodeURIComponent(model)+'&width=1024&height=1024';
-      const controller=new AbortController();
-      const timer=setTimeout(()=>controller.abort(),90000);
-      let res;
-      try{
-        res=await fetch(url,{headers:{Authorization:'Bearer '+pollinationsKey,Accept:'image/*'},signal:controller.signal});
-      }finally{
-        clearTimeout(timer);
-      }
-      if(!res.ok)throw new Error('Pollinations HTTP '+res.status+': '+(await res.text()).slice(0,400));
-      const contentType=String(res.headers.get('content-type')||'').toLowerCase();
-      if(!contentType.startsWith('image/'))throw new Error('Pollinations returned non-image content: '+contentType);
-      blob=await res.blob();
-    }
-
-    if(!blob?.size)throw new Error(provider+' returned an empty image');
-    if(blob.size>10*1024*1024)throw new Error('Generated image exceeds Telegram upload limit');
+    // FLUX.1 Schnell returns a Base64-encoded JPEG image.
+    const binary=atob(encoded);
+    if(!binary.length)throw new Error('Cloudflare Workers AI returned an empty image');
+    if(binary.length>10*1024*1024)throw new Error('Generated image exceeds Telegram upload limit');
+    const bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
+    const blob=new Blob([bytes],{type:'image/jpeg'});
 
     const sent=await tgForm(env,'sendPhoto',{
       chat_id:msg.chat.id,
-      caption:'🎨 <b>Piko AI Image · '+esc(provider)+'</b>\n'+esc(prompt.slice(0,650)),
+      caption:'🎨 <b>Piko AI Image · Cloudflare Workers AI (FLUX.1 Schnell)</b>\n'+esc(prompt.slice(0,650)),
       parse_mode:'HTML'
-    },'photo',blob,'piko.png');
+    },'photo',blob,'piko.jpg');
     if(!sent?.ok)throw new Error('Telegram upload failed: '+String(sent?.description||'Unknown Telegram error'));
 
     if(status?.result?.message_id){
@@ -500,7 +425,7 @@ async function imageCommand(env,msg,cmd){
       catch(deleteError){console.error('Piko image status cleanup failed:',deleteError?.message||String(deleteError));}
     }
   }catch(error){
-    console.error('Piko image generation failed:',{
+    console.error('Piko Workers AI image generation failed:',{
       message:error?.message||String(error),
       user_id:msg.from?.id,
       chat_id:msg.chat?.id
