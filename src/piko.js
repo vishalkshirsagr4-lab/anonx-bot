@@ -393,9 +393,9 @@ async function imageCommand(env,msg,cmd){
   const charge=await q(env,'UPDATE piko_profiles SET credits=credits-5 WHERE user_id=? AND credits>=5',[msg.from.id]);
   if(!charge.rowsAffected)return reply(env,msg.chat.id,'You need 5 credits. Use /daily to earn coins; ask the owner about credits.');
 
-  const status=await reply(env,msg.chat.id,'🎨 Piko is creating your image… This may take a little while.');
-  let completed=false;
+  let status=null;
   try{
+    status=await reply(env,msg.chat.id,'🎨 Piko is creating your image… This may take a little while.');
     const model=String(env?.POLLINATIONS_IMAGE_MODEL||'zimage').trim();
     const url='https://gen.pollinations.ai/image/'+encodeURIComponent(prompt)+'?model='+encodeURIComponent(model)+'&width=1024&height=1024';
     const controller=new AbortController();
@@ -427,8 +427,10 @@ async function imageCommand(env,msg,cmd){
     },'photo',blob,'piko.png');
     if(!sent?.ok)throw new Error('Telegram upload failed: '+String(sent?.description||'Unknown Telegram error'));
 
-    completed=true;
-    if(status?.result?.message_id)await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:status.result.message_id});
+    if(status?.result?.message_id){
+      try{await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:status.result.message_id});}
+      catch(deleteError){console.error('Piko image status cleanup failed:',deleteError?.message||String(deleteError));}
+    }
   }catch(error){
     console.error('Piko image generation failed:',{
       message:error?.message||String(error),
