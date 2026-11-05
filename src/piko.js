@@ -70,7 +70,7 @@ async function groqChat(env, userId, input) {
       body: JSON.stringify({
         model,
         messages,
-        max_completion_tokens: 512,
+        max_completion_tokens: 2048,
         reasoning_effort: 'low',
         reasoning_format: 'hidden',
         temperature: 0.7
@@ -98,11 +98,16 @@ async function groqChat(env, userId, input) {
   }
 
   const savedAt = Date.now();
-  await batch(env, [
-    { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'user', input.slice(0, 4000), savedAt] },
-    { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'assistant', answer, savedAt] },
-    { sql: 'DELETE FROM piko_history WHERE user_id=? AND id NOT IN (SELECT id FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 16)', args: [userId, userId] }
-  ]);
+  // Conversation history is helpful but must not suppress an otherwise valid AI answer.
+  try {
+    await batch(env, [
+      { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'user', input.slice(0, 4000), savedAt] },
+      { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'assistant', answer, savedAt] },
+      { sql: 'DELETE FROM piko_history WHERE user_id=? AND id NOT IN (SELECT id FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 16)', args: [userId, userId] }
+    ]);
+  } catch (historyError) {
+    console.error('Piko conversation history save failed:', historyError?.message || String(historyError));
+  }
   return answer;
 }
 
@@ -139,7 +144,7 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
         { role: 'user', content: task + ' Theme: ' + theme + ' Requested category: ' + mode + '. Create a genuinely new question that is semantically different from every item in this recent-used list. Never reuse, lightly edit, reword, or paraphrase any listed question: ' + JSON.stringify(avoid) + '. Keep wording short and answer choices simple and clearly distinct. For emoji puzzles, make q start with 2–5 meaningful emojis and make all four choices character names, not series titles. ' + schema }
       ],
       temperature: 0.85,
-      max_completion_tokens: 700,
+      max_completion_tokens: 2048,
       reasoning_effort: 'low',
       reasoning_format: 'hidden',
       response_format: { type: 'json_object' }
@@ -241,234 +246,6 @@ async function whisperCommand(env,msg,cmd) {
   await reply(env, msg.chat.id, '🔐 A whisper message to ' + mention(target) + '.\nOnly they can read the message.');
 }
 
-
-const NAZRIYA_API_BASE = 'https://nazriya.teamgod.online/api';
-const MUSIC_LINK_HOSTS = new Set([
-  'youtube.com','www.youtube.com','youtu.be','music.youtube.com',
-  'open.spotify.com','spotify.com','music.apple.com','itunes.apple.com',
-  'soundcloud.com','www.soundcloud.com','deezer.com','www.deezer.com',
-  'jiosaavn.com','www.jiosaavn.com','gaana.com','wynk.in'
-]);
-function musicItems(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (!payload || typeof payload !== 'object') return [];
-  for (const key of ['results','data','songs','tracks','items','result']) {
-    const value = payload[key];
-    if (Array.isArray(value)) return value;
-    if (value && typeof value === 'object') {
-      for (const nested of ['results','songs','tracks','items']) if (Array.isArray(value[nested])) return value[nested];
-    }
-  }
-  return payload.data && typeof payload.data === 'object' ? [payload.data] : [];
-}
-function musicField(item, keys) {
-  for (const key of keys) {
-    const value = item?.[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return '';
-}
-function safeMusicPlatformLink(raw) {
-  if (!raw) return '';
-  try {
-    const parsed = new URL(raw);
-    if (parsed.protocol !== 'https:' || !MUSIC_LINK_HOSTS.has(parsed.hostname.toLowerCase())) return '';
-    return parsed.href;
-  } catch { return ''; }
-}
-
-function musicAuthorized(value) {
-  // Nazriya doesn't return license fields. Only block if API explicitly says no.
-  if (!value || typeof value !== 'object') return false;
-  if (value.authorized === false || value.rights_cleared === false) return false;
-  const license = String(value.license || value.licence || value.rights || '').toLowerCase();
-  if (/copyright|infring|not.?allowed|blocked/i.test(license)) return false;
-  return true;
-}
-
-function mediaPayloadUrl(payload, kind) {
-  const candidates = [payload, payload?.data, payload?.result, payload?.media,
-                      payload?.data?.media, payload?.result?.media].filter(Boolean);
-  const keys = kind === 'audio'
-    ? ['audio_url','audio','stream_url','stream','media_url','media',
-       'download_url','download_link','downloadLink','file_url','file','url','link']
-    : ['video_url','video','stream_url','stream','media_url','media',
-       'download_url','download_link','downloadLink','file_url','file','url','link'];
-  for (const candidate of candidates) {
-    for (const key of keys) {
-      const raw = candidate?.[key];
-      if (typeof raw === 'string' && raw.trim()) {
-        try {
-          const u = new URL(raw);
-          if (u.protocol === 'https:' && !['localhost','127.0.0.1','0.0.0.0'].includes(u.hostname)) return u.href;
-        } catch {}
-      }
-    }
-  }
-  return '';
-}
-
-
-async function fetchNazriyaJson(url) {
-  const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000) });
-  const payload = await response.json();
-  if (!response.ok || payload?.status === 'error' || payload?.success === false) {
-    throw new Error('Nazriya API request failed (' + response.status + ')');
-  }
-  return payload;
-}
-async function searchNazriya(env, query) {
-  const url = new URL(NAZRIYA_API_BASE + '/search');
-  url.searchParams.set('q', query);
-  url.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
-  return musicItems(await fetchNazriyaJson(url.toString())).slice(0, 5);
-}
-
-async function sendNazriyaMedia(env, msg, query, kind) {
-  const endpoint = new URL(NAZRIYA_API_BASE + (kind === 'audio' ? '/audio' : '/video'));
-  endpoint.searchParams.set('q', String(query || '').trim().slice(0, 120));
-  endpoint.searchParams.set('key', String(env.NAZRIYA_API_KEY || '').trim());
-
-  let response;
-  try {
-    response = await fetch(endpoint.toString(), { signal: AbortSignal.timeout(60000) });
-  } catch (e) {
-    console.error('[nazriya] fetch failed:', endpoint.toString(), e.message);
-    return { ok: false, reason: 'Media API request failed: ' + e.message };
-  }
-
-  if (!response.ok) {
-    console.error('[nazriya] HTTP error:', response.status, response.statusText);
-    return { ok: false, reason: 'Media API returned HTTP ' + response.status };
-  }
-
-  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-  console.log('[nazriya] content-type:', contentType);
-
-  // Two cases:
-  // 1) API returns the media file directly (content-type is audio/* or video/*, or octet-stream for mp4)
-  // 2) API returns JSON with a download URL inside
-  let blob;
-
-  if (contentType.startsWith('audio/') || contentType.startsWith('video/') ||
-      contentType.includes('octet-stream') || contentType.includes('mpegurl')) {
-    blob = await response.blob();
-  } else {
-    // Try JSON: the API might return { url: "..." }
-    let payload;
-    try {
-      payload = await response.json();
-    } catch (e) {
-      // Neither media nor JSON — grab a preview so we can diagnose
-      const text = await response.text().catch(() => '');
-      console.error('[nazriya] unexpected response:', text.slice(0, 300));
-      return { ok: false, reason: 'Unexpected API response (not media, not JSON).' };
-    }
-    console.log('[nazriya] payload:', JSON.stringify(payload).slice(0, 400));
-    const mediaUrl = mediaPayloadUrl(payload, kind);
-    if (!mediaUrl) return { ok: false, reason: 'No direct HTTPS media URL in API response.' };
-    const mediaResponse = await fetch(mediaUrl, { signal: AbortSignal.timeout(60000) });
-    if (!mediaResponse.ok) return { ok: false, reason: 'Media source HTTP ' + mediaResponse.status };
-    blob = await mediaResponse.blob();
-  }
-
-  if (!blob.size) return { ok: false, reason: 'Empty media file.' };
-  if (blob.size > 45 * 1024 * 1024) {
-    return { ok: false, reason: 'File is ' + (blob.size / 1024 / 1024).toFixed(1) + ' MB, exceeds 45 MB Telegram limit.' };
-  }
-
-  const title = String(query || 'Piko music').slice(0, 900);
-  const method = kind === 'audio' ? 'sendAudio' : 'sendVideo';
-  const field = kind === 'audio' ? 'audio' : 'video';
-  // Use .mp4 for both — Telegram accepts mp4 container for audio when the file is actually mp4
-  const ext = blob.type === 'audio/mpeg' || contentType.startsWith('audio/') ? 'mp3' : 'mp4';
-
-  const sent = await tgForm(env, method, {
-  chat_id: msg.chat.id,
-  caption: `🎵 <b>${esc(title)}</b>`,
-  parse_mode: 'HTML',
-  reply_to_message_id: msg.message_id
-}, field, blob, 'piko.' + ext);
-
-if (!sent?.ok && /repl(y|ied).*not found|message to be repl/i.test(sent?.description || '')) {
-  // Original /play message was deleted — send without reply
-  const retry = await tgForm(env, method, {
-    chat_id: msg.chat.id,
-    caption: `🎵 <b>${esc(title)}</b>`,
-    parse_mode: 'HTML'
-  }, field, blob, 'piko.' + ext);
-  if (retry?.ok) return { ok: true };
-  console.error('[nazriya] Telegram retry failed:', retry?.description);
-  return { ok: false, reason: 'Telegram: ' + (retry?.description || 'unknown') };
-}
-
-  if (!sent?.ok) {
-    console.error('[nazriya] Telegram send failed:', sent?.description);
-    return { ok: false, reason: 'Telegram: ' + (sent?.description || 'unknown') };
-  }
-  return { ok: true };
-}
-
-
-async function musicSearchCommand(env, msg, cmd) {
-  const query = String(cmd.arg || '').trim().slice(0, 120);
-  if (!query) return reply(env, msg.chat.id, '🎵 <b>Piko Music</b>\n\n/search song — search metadata\n/play song — send authorized audio to this group\n/song song — same as /play\n/video song — send authorized video to this group\n/music song — send authorized audio and video');
-  const apiKey = String(env?.NAZRIYA_API_KEY || '').trim();
-  if (!apiKey) return reply(env, msg.chat.id, '⚙️ Music search is not configured. Add <code>NAZRIYA_API_KEY</code> as a Cloudflare Worker secret.');
-  const status = await reply(env, msg.chat.id, '🔎 Searching music…', { reply_to_message_id: msg.message_id });
-  if (!status?.ok || !status.result?.message_id) return true;
-  const statusId = status.result.message_id;
-  const editStatus = async text => tg(env, 'editMessageText', {
-    chat_id: msg.chat.id, message_id: statusId, text, parse_mode: 'HTML', disable_web_page_preview: true
-  });
-  try {
-    const items = await searchNazriya(env, query);
-    if (!items.length) {
-      await editStatus('🔎 No matching results. Try another song title or artist.');
-      return true;
-    }
-    if (cmd.name === 'search') {
-      const lines = items.map((item, i) => {
-        const title = musicField(item, ['title','name','song','track']) || 'Unknown title';
-        const uploader = musicField(item, ['uploader','artist','author','singer']) || 'Artist not listed';
-        const duration = Number(item.duration);
-        return (i + 1) + '. <b>' + esc(title.slice(0, 140)) + '</b>\n   👤 ' + esc(uploader.slice(0, 100)) +
-          (Number.isFinite(duration) && duration > 0 ? '\n   ⏱ ' + Math.floor(duration / 60) + ':' + String(duration % 60).padStart(2,'0') : '');
-      });
-      await editStatus('🔎 <b>Matching music results</b>\n\n' + lines.join('\n\n') +
-        '\n\nUse /play ' + esc(query) + ' or /video ' + esc(query) + ' for authorized media.');
-      return true;
-    }
-    const selected = items[0];
-       const title = musicField(selected, ['title','name','song','track']) || 'Selected result';
-       await editStatus('🎵 Selected: <b>' + esc(title.slice(0, 140)) + '</b>\nPreparing authorized media for this group…');
-       const kinds = cmd.name === 'video' ? ['video']
-           : cmd.name === 'music' ? ['audio','video'] : ['audio'];
-   let sentCount = 0;
-const failures = [];
-for (const kind of kinds) {
-  try {
-    const result = await sendNazriyaMedia(env, msg, query, kind);
-        if (result.ok) sentCount++;
-        else failures.push((kind === 'audio' ? 'Audio: ' : 'Video: ') + result.reason);
-      } catch (error) {
-        console.error('Piko ' + kind + ' delivery failed:', String(error?.message || error).slice(0, 180));
-        failures.push((kind === 'audio' ? 'Audio: ' : 'Video: ') + 'provider or Telegram delivery failed.');
-      }
-    }
-    if (sentCount) {
-      await editStatus('✅ Sent ' + sentCount + ' playable media item' + (sentCount === 1 ? '' : 's') + ' to this group.' +
-        (failures.length ? '\n\n' + failures.map(esc).join('\n') : ''));
-    } else {
-      await editStatus('⚠️ No playable media was sent.\n\n' + failures.map(esc).join('\n') +
-        '\n\nThe search result must explicitly identify public-domain, licensed, or user-owned media, and the media endpoint must return a direct audio/video file.');
-    }
-  } catch (error) {
-    console.error('Piko music command failed:', String(error?.message || error).slice(0, 180));
-    await editStatus('⚠️ Music service is temporarily unavailable. Please try again later.');
-  }
-  return true;
-}
 
 async function economy(env,msg,cmd) {
   const id=msg.from.id, a=argsOf(cmd.arg), p=await profile(env,msg.from), now=Date.now();
@@ -793,7 +570,7 @@ async function replyByMessageLink(env, msg, cmd) {
     { reply_to_message_id: msg.message_id });
 }
 
-const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','search','music','play','song','video','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -803,7 +580,6 @@ export async function handlePikoDM(msg,env,cmd){
     await profile(env,msg.from);
     if(cmd.name==='reply'){await replyByMessageLink(env,msg,cmd);return true;}
     if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
-    if(['search','music','play','song','video'].includes(cmd.name)){await musicSearchCommand(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
     if(['ship','roll','hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}

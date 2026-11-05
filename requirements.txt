@@ -1,4 +1,0 @@
-Pyrogram==2.0.106
-py-tgcalls==2.2.11
-aiohttp>=3.9,<4
-python-dotenv>=1.0,<2

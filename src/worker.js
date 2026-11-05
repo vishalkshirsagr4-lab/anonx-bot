@@ -13,6 +13,32 @@ export default {
 
     const url = new URL(request.url);
 
+    // Public, secret-free health summary for diagnosing webhook-wide failures.
+    if (url.pathname === '/health' && request.method === 'GET') {
+      const configured = {
+        bot_token: Boolean(String(env?.BOT_TOKEN || '').trim()),
+        webhook_secret: Boolean(String(env?.WEBHOOK_SECRET || '').trim()),
+        admin_secret: Boolean(String(env?.ADMIN_SECRET || '').trim()),
+        turso_db_url: Boolean(String(env?.TURSO_DB_URL || '').trim()),
+        turso_auth_token: Boolean(String(env?.TURSO_AUTH_TOKEN || '').trim()),
+        groq_api_key: Boolean(String(env?.GROQ_API_KEY || '').trim())
+      };
+      const requiredReady = ['bot_token', 'webhook_secret', 'admin_secret', 'turso_db_url', 'turso_auth_token']
+        .every(key => configured[key]);
+      return new Response(JSON.stringify({
+        status: requiredReady ? 'ready' : 'configuration_required',
+        worker: 'ok',
+        required: {
+          bot_token: configured.bot_token,
+          webhook_secret: configured.webhook_secret,
+          admin_secret: configured.admin_secret,
+          turso_db_url: configured.turso_db_url,
+          turso_auth_token: configured.turso_auth_token
+        },
+        ai: { groq_api_key: configured.groq_api_key, model: String(env?.GROQ_CHAT_MODEL || 'openai/gpt-oss-20b') }
+      }, null, 2), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    }
+
     const webhookSecret = String(env?.WEBHOOK_SECRET || state.WEBHOOK_SECRET || '').trim();
     const adminSecret = String(env?.ADMIN_SECRET || state.ADMIN_SECRET || '').trim();
 
@@ -261,6 +287,7 @@ export default {
         'X-Telegram-Bot-Api-Secret-Token'
       ) !== webhookSecret
     ) {
+      console.error('Webhook authentication failed: Telegram secret token does not match WEBHOOK_SECRET. Re-run the protected /setwebhook endpoint after changing the secret.');
       return new Response('Unauthorized', {
         status: 401
       });
@@ -281,7 +308,17 @@ export default {
         await initDB(env);
         await handleUpdate(update, env, ctx);
       } catch (error) {
-        console.error('Update Error:', error);
+        console.error('Update Error:', { update_id: update?.update_id, chat_id: update?.message?.chat?.id, message: error?.message || String(error) });
+        if (update?.message?.chat?.id) {
+          const token = env?.BOT_TOKEN || state.BOT_TOKEN;
+          if (token) {
+            try {
+              await tg(env, 'sendMessage', { chat_id: update.message.chat.id, text: '⚠️ Piko is temporarily unable to process this message. The owner should check /health and Worker logs.' });
+            } catch (sendError) {
+              console.error('Update error notification failed:', sendError?.message || String(sendError));
+            }
+          }
+        }
       }
     })());
 
