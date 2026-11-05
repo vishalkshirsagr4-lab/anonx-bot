@@ -5,6 +5,7 @@ import { initDB, q } from './db.js';
 import { tg } from './telegram.js';
 import { warmCards, imgBase } from './cards.js';
 import { handleUpdate, setupCommands } from './handlers.js';
+import { cleanupPikoMemory } from './piko.js';
 import { tick } from './scheduler.js';
 
 export default {
@@ -420,6 +421,7 @@ export default {
       try {
         await initDB(env);
         await tick(env);
+        await cleanupPikoMemory(env);
         await warmCards(env);
       } catch (error) {
         console.error('Scheduled task error:', error);
