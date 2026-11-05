@@ -28,6 +28,9 @@ export default {
       return new Response(JSON.stringify({
         status: requiredReady ? 'ready' : 'configuration_required',
         worker: 'ok',
+        webhook_endpoint: '/webhook',
+        webhook_setup_endpoint: '/setwebhook',
+        webhook_status_endpoint: '/webhook-status',
         required: {
           bot_token: configured.bot_token,
           webhook_secret: configured.webhook_secret,
@@ -165,6 +168,62 @@ export default {
             }
           }
         );
+      }
+    }
+
+    // ─── Protected Telegram webhook diagnostics ───
+    if (url.pathname === '/webhook-status') {
+      if (request.method !== 'GET') {
+        return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET' } });
+      }
+
+      const denied = adminOnly();
+      if (denied) return denied;
+
+      if (!String(env?.BOT_TOKEN || state.BOT_TOKEN || '').trim()) {
+        return new Response(JSON.stringify({ ok: false, error: 'BOT_TOKEN is not configured.' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
+      }
+
+      try {
+        const result = await tg(env, 'getWebhookInfo', {});
+        if (!result?.ok) {
+          console.error('Telegram getWebhookInfo failed:', result?.description || 'Unknown Telegram API error');
+          return new Response(JSON.stringify({
+            ok: false,
+            error: 'Telegram rejected getWebhookInfo.',
+            telegram_error: String(result?.description || 'Unknown Telegram API error').slice(0, 300)
+          }), {
+            status: 502,
+            headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+          });
+        }
+
+        const info = result.result || {};
+        const expectedUrl = url.origin + '/webhook';
+        const registeredUrl = String(info.url || '');
+        return new Response(JSON.stringify({
+          ok: true,
+          webhook_registered: Boolean(registeredUrl),
+          points_to_this_worker: registeredUrl === expectedUrl,
+          expected_path: '/webhook',
+          registered_url_matches: registeredUrl === expectedUrl,
+          pending_update_count: Number(info.pending_update_count || 0),
+          last_error_date: info.last_error_date || null,
+          last_error_message: String(info.last_error_message || '').slice(0, 300) || null,
+          max_connections: info.max_connections || null,
+          allowed_updates: info.allowed_updates || []
+        }, null, 2), {
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
+      } catch (error) {
+        console.error('Webhook status check failed:', error?.message || String(error));
+        return new Response(JSON.stringify({ ok: false, error: 'Unable to check Telegram webhook status.' }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
       }
     }
 
