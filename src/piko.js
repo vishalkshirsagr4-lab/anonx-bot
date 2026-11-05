@@ -72,7 +72,7 @@ async function groqChat(env, userId, input) {
         messages,
         max_completion_tokens: 2048,
         reasoning_effort: 'low',
-        reasoning_format: 'hidden',
+        include_reasoning: false,
         temperature: 0.7
       })
     });
@@ -146,7 +146,7 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
       temperature: 0.85,
       max_completion_tokens: 2048,
       reasoning_effort: 'low',
-      reasoning_format: 'hidden',
+      include_reasoning: false,
       response_format: { type: 'json_object' }
     })
   });
