@@ -21,7 +21,8 @@ export default {
         admin_secret: Boolean(String(env?.ADMIN_SECRET || '').trim()),
         turso_db_url: Boolean(String(env?.TURSO_DB_URL || '').trim()),
         turso_auth_token: Boolean(String(env?.TURSO_AUTH_TOKEN || '').trim()),
-        groq_api_key: Boolean(String(env?.GROQ_API_KEY || '').trim())
+        groq_api_key: Boolean(String(env?.GROQ_API_KEY || '').trim()),
+        workers_ai_binding: Boolean(env?.AI && typeof env.AI.run === 'function')
       };
       const requiredReady = ['bot_token', 'webhook_secret', 'admin_secret', 'turso_db_url', 'turso_auth_token']
         .every(key => configured[key]);
@@ -38,7 +39,12 @@ export default {
           turso_db_url: configured.turso_db_url,
           turso_auth_token: configured.turso_auth_token
         },
-        ai: { groq_api_key: configured.groq_api_key, model: String(env?.GROQ_CHAT_MODEL || 'openai/gpt-oss-20b') }
+        ai: {
+          groq_api_key: configured.groq_api_key,
+          model: String(env?.GROQ_CHAT_MODEL || 'openai/gpt-oss-20b'),
+          image_generation: configured.workers_ai_binding ? 'cloudflare_workers_ai_configured' : 'workers_ai_binding_missing',
+          image_model: '@cf/black-forest-labs/flux-1-schnell'
+        }
       }, null, 2), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     }
 
@@ -103,6 +109,9 @@ export default {
         image_api: imgBase(env)
           ? 'configured'
           : 'not configured',
+        image_generation: env?.AI && typeof env.AI.run === 'function'
+          ? 'Cloudflare Workers AI configured'
+          : 'Workers AI binding AI missing',
         ai_chat: String(env?.GROQ_API_KEY || '').trim() ? 'configured' : 'missing',
         ai_model: String(env?.GROQ_CHAT_MODEL || 'openai/gpt-oss-20b'),
         voice_transcription: String(env?.GROQ_API_KEY || '').trim() ? 'configured' : 'missing',
