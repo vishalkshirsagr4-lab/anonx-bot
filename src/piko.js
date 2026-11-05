@@ -249,7 +249,25 @@ async function whisperCommand(env,msg,cmd) {
 
 async function economy(env,msg,cmd) {
   const id=msg.from.id, a=argsOf(cmd.arg), p=await profile(env,msg.from), now=Date.now();
-  if(cmd.name==='credits'||cmd.name==='wallet') return reply(env,msg.chat.id,`💼 <b>Piko Wallet</b>\n\n✨ Credits: <b>${p.credits}</b>\n🪙 Coins: <b>${p.coins||0}</b>\n\nUse /daily and /work to earn coins.`);
+  if(cmd.name==='credits'||cmd.name==='wallet') return reply(env,msg.chat.id,`💼 <b>Piko Wallet</b>\n\n✨ Credits: <b>${p.credits}</b>\n🪙 Coins: <b>${p.coins||0}</b>\n\nEarn coins with /daily and /work.\nConvert coins to image credits: /convert 100 (20 coins = 1 credit).`);
+  if(cmd.name==='convert'){
+    const coins=Number(a[0]);
+    if(!Number.isSafeInteger(coins)||coins<20||coins>1000000||coins%20!==0)
+      return reply(env,msg.chat.id,'ℹ️ Usage: /convert 100\nMinimum: 20 coins. Use multiples of 20.\nRate: 20 coins = 1 image credit.');
+    const credits=coins/20;
+    const debit=await q(env,'UPDATE users SET coins=coins-?,updated_at=? WHERE user_id=? AND coins>=?',[coins,now,id,coins]);
+    if(!debit.rowsAffected) return reply(env,msg.chat.id,'❌ Not enough coins. Earn more with /daily or /work.');
+    try{
+      await q(env,'UPDATE piko_profiles SET credits=credits+? WHERE user_id=?',[credits,id]);
+    }catch(error){
+      try{await q(env,'UPDATE users SET coins=coins+?,updated_at=? WHERE user_id=?',[coins,Date.now(),id]);}
+      catch(refundError){console.error('Piko coin conversion refund failed:',refundError?.message||String(refundError));}
+      console.error('Piko coin conversion failed:',error?.message||String(error));
+      return reply(env,msg.chat.id,'❌ Conversion failed. If your coins were deducted, contact the owner for a refund.');
+    }
+    const updated=await profile(env,msg.from);
+    return reply(env,msg.chat.id,`✅ <b>Conversion complete!</b>\n\n🪙 Spent: <b>${coins}</b> coins\n✨ Received: <b>${credits}</b> image credits\n\nNew balance: ${updated.coins||0} coins · ${updated.credits} credits`);
+  }
   if(cmd.name==='daily'||cmd.name==='work'||cmd.name==='crime'||cmd.name==='rob'){
     const field={daily:'daily_at',work:'work_at',crime:'crime_at',rob:'rob_at'}[cmd.name], hours={daily:24,work:1,crime:2,rob:6}[cmd.name];
     const wait=remaining(p[field],hours); if(wait) return reply(env,msg.chat.id,'⏳ Try again in '+duration(wait)+'.');
@@ -668,7 +686,7 @@ async function replyByMessageLink(env, msg, cmd) {
     { reply_to_message_id: msg.message_id });
 }
 
-const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','convert','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -678,7 +696,7 @@ export async function handlePikoDM(msg,env,cmd){
     await profile(env,msg.from);
     if(cmd.name==='reply'){await replyByMessageLink(env,msg,cmd);return true;}
     if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
-    if(['credits','wallet','daily','work','crime','rob','pay'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
+    if(['credits','wallet','daily','work','crime','rob','pay','convert'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
     if(['ship','roll','hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
     if(['admin','stats','addcredits','addcoins','gban','ungban'].includes(cmd.name)){await adminCommand(env,msg,cmd);return true;}
@@ -774,5 +792,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits user_id|@username amount, /addcoins user_id|@username amount (or reply with amount), /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/convert 100 — exchange 100 coins for 5 image credits (20 coins = 1 credit)\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits user_id|@username amount, /addcoins user_id|@username amount (or reply with amount), /gban, /ungban';
 }
