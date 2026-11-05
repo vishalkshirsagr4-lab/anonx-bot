@@ -70,7 +70,7 @@ async function groqChat(env, userId, input) {
       body: JSON.stringify({
         model,
         messages,
-        max_completion_tokens: 512,
+        max_completion_tokens: 2048,
         reasoning_effort: 'low',
         reasoning_format: 'hidden',
         temperature: 0.7
@@ -98,11 +98,16 @@ async function groqChat(env, userId, input) {
   }
 
   const savedAt = Date.now();
-  await batch(env, [
-    { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'user', input.slice(0, 4000), savedAt] },
-    { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'assistant', answer, savedAt] },
-    { sql: 'DELETE FROM piko_history WHERE user_id=? AND id NOT IN (SELECT id FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 16)', args: [userId, userId] }
-  ]);
+  // Conversation history is helpful but must not suppress an otherwise valid AI answer.
+  try {
+    await batch(env, [
+      { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'user', input.slice(0, 4000), savedAt] },
+      { sql: 'INSERT INTO piko_history(user_id,role,content,created_at) VALUES(?,?,?,?)', args: [userId, 'assistant', answer, savedAt] },
+      { sql: 'DELETE FROM piko_history WHERE user_id=? AND id NOT IN (SELECT id FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 16)', args: [userId, userId] }
+    ]);
+  } catch (historyError) {
+    console.error('Piko conversation history save failed:', historyError?.message || String(historyError));
+  }
   return answer;
 }
 
@@ -139,7 +144,7 @@ export async function generateGameContent(env, type, topic = 'mixed', avoidQuest
         { role: 'user', content: task + ' Theme: ' + theme + ' Requested category: ' + mode + '. Create a genuinely new question that is semantically different from every item in this recent-used list. Never reuse, lightly edit, reword, or paraphrase any listed question: ' + JSON.stringify(avoid) + '. Keep wording short and answer choices simple and clearly distinct. For emoji puzzles, make q start with 2–5 meaningful emojis and make all four choices character names, not series titles. ' + schema }
       ],
       temperature: 0.85,
-      max_completion_tokens: 700,
+      max_completion_tokens: 2048,
       reasoning_effort: 'low',
       reasoning_format: 'hidden',
       response_format: { type: 'json_object' }
