@@ -28,7 +28,11 @@ async function ensureSchema(env) {
     `CREATE INDEX IF NOT EXISTS idx_piko_history_user ON piko_history(user_id,id)`,
     `CREATE TABLE IF NOT EXISTS piko_groups (chat_id TEXT PRIMARY KEY, welcome_enabled INTEGER NOT NULL DEFAULT 1, welcome_text TEXT NOT NULL DEFAULT 'Welcome {first} to {chatname}! 🎉')`,
     `CREATE TABLE IF NOT EXISTS piko_filters (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, keyword TEXT NOT NULL, response TEXT NOT NULL, UNIQUE(chat_id,keyword))`,
-    `CREATE TABLE IF NOT EXISTS piko_bans (user_id INTEGER PRIMARY KEY, reason TEXT, created_at INTEGER NOT NULL)`
+    `CREATE TABLE IF NOT EXISTS piko_bans (user_id INTEGER PRIMARY KEY, reason TEXT, created_at INTEGER NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS piko_group_memory_settings (chat_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, retention_days INTEGER NOT NULL DEFAULT 30, max_messages INTEGER NOT NULL DEFAULT 500, updated_at INTEGER NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS piko_group_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, message_id INTEGER NOT NULL, user_id INTEGER NOT NULL, display_name TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(chat_id,message_id))`,
+    `CREATE INDEX IF NOT EXISTS idx_piko_group_messages_recent ON piko_group_messages(chat_id,id)`,
+    `CREATE INDEX IF NOT EXISTS idx_piko_group_messages_user ON piko_group_messages(chat_id,user_id)`
   ];
   await batch(env, statements.map(sql => ({ sql })));
   schemaReady = true;
@@ -50,13 +54,66 @@ async function reply(env, chatId, text, extra={}) { return tg(env,'sendMessage',
 async function ownerOnly(env, msg) { if (!isOwner(msg.from.id)) { await reply(env,msg.chat.id,'⛔ Owner only.'); return false; } return true; }
 async function banned(env,id) { const r=await q(env,'SELECT 1 FROM piko_bans WHERE user_id=?',[id]); return r.rows.length>0; }
 
-async function groqChat(env, userId, input, { groupMode = false } = {}) {
+async function groupMemoryStatus(env, chatId) {
+  const r = await q(env, 'SELECT enabled,retention_days,max_messages FROM piko_group_memory_settings WHERE chat_id=?', [String(chatId)]);
+  return r.rows[0] || { enabled: 0, retention_days: 30, max_messages: 500 };
+}
+
+async function groupMemoryCommand(env, msg, cmd) {
+  const chatId = String(msg.chat.id);
+  const action = String(cmd.arg || '').trim().toLowerCase();
+  if (cmd.name === 'forgetme') {
+    const removed = await q(env, 'DELETE FROM piko_group_messages WHERE chat_id=? AND user_id=?', [chatId, msg.from.id]);
+    return reply(env, chatId, '🧹 Removed your stored messages from this group memory (' + Number(removed.rowsAffected || 0) + ' messages).');
+  }
+  const { isAdmin } = await import('./helpers.js');
+  if (!await isAdmin(env, chatId, msg.from.id)) {
+    return reply(env, chatId, '⛔ Only this group’s administrators can change Piko memory settings.');
+  }
+  if (!action || action === 'status') {
+    const setting = await groupMemoryStatus(env, chatId);
+    return reply(env, chatId, '🧠 <b>Group conversation memory: ' + (Number(setting.enabled) ? 'ON' : 'OFF') + '</b>\nRetention: ' + Number(setting.retention_days) + ' days\nMaximum: ' + Number(setting.max_messages) + ' recent messages\n\nUse /pikomemory on or /pikomemory off.');
+  }
+  if (action === 'on') {
+    await q(env, 'INSERT INTO piko_group_memory_settings(chat_id,enabled,retention_days,max_messages,updated_at) VALUES(?,1,30,500,?) ON CONFLICT(chat_id) DO UPDATE SET enabled=1,retention_days=30,max_messages=500,updated_at=excluded.updated_at', [chatId, Date.now()]);
+    return reply(env, chatId, '🧠 <b>Piko group memory is now ON.</b>\nPiko will use recent text messages to understand the conversation. Messages are retained for up to 30 days, with a rolling limit of 500 messages per group. Members can use /forgetme to remove their stored messages from this group. Use /pikomemory off to disable memory and clear this group’s stored conversation.');
+  }
+  if (action === 'off') {
+    await q(env, 'INSERT INTO piko_group_memory_settings(chat_id,enabled,retention_days,max_messages,updated_at) VALUES(?,0,30,500,?) ON CONFLICT(chat_id) DO UPDATE SET enabled=0,updated_at=excluded.updated_at', [chatId, Date.now()]);
+    await q(env, 'DELETE FROM piko_group_messages WHERE chat_id=?', [chatId]);
+    return reply(env, chatId, '🧠 Group memory is OFF. The stored conversation for this group has been cleared.');
+  }
+  return reply(env, chatId, 'Usage: /pikomemory on, /pikomemory off, or /pikomemory status.');
+}
+
+async function storeGroupMessage(env, msg) {
+  if (!msg.text || msg.from?.is_bot || String(msg.text).startsWith('/')) return;
+  const chatId = String(msg.chat.id);
+  const setting = await groupMemoryStatus(env, chatId);
+  if (!Number(setting.enabled)) return;
+  const now = Date.now();
+  const displayName = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ').slice(0, 80) || 'Member';
+  const content = String(msg.text).trim().slice(0, 1500);
+  if (!content) return;
+  await q(env, 'DELETE FROM piko_group_messages WHERE chat_id=? AND created_at<?', [chatId, now - Number(setting.retention_days || 30) * 86400000]);
+  await q(env, 'INSERT OR IGNORE INTO piko_group_messages(chat_id,message_id,user_id,display_name,content,created_at) VALUES(?,?,?,?,?,?)', [chatId, Number(msg.message_id), Number(msg.from.id), displayName, content, now]);
+  await q(env, 'DELETE FROM piko_group_messages WHERE chat_id=? AND id NOT IN (SELECT id FROM piko_group_messages WHERE chat_id=? ORDER BY id DESC LIMIT ?)', [chatId, chatId, Number(setting.max_messages || 500)]);
+}
+
+async function loadGroupContext(env, chatId, currentMessageId) {
+  const setting = await groupMemoryStatus(env, chatId);
+  if (!Number(setting.enabled)) return '';
+  const r = await q(env, 'SELECT display_name,content,created_at FROM piko_group_messages WHERE chat_id=? AND message_id<>? AND created_at>=? ORDER BY id DESC LIMIT 20', [String(chatId), Number(currentMessageId || 0), Date.now() - Number(setting.retention_days || 30) * 86400000]);
+  return r.rows.reverse().map(x => x.display_name + ': ' + x.content).join('\n').slice(-9000);
+}
+
+async function groqChat(env, userId, input, { groupMode = false, groupContext = '' } = {}) {
   const key = groqKey(env);
   if (!key) return 'Piko AI is not configured yet. Add GROQ_API_KEY as a Cloudflare secret.';
 
   const history = groupMode ? { rows: [] } : await q(env, 'SELECT role,content FROM piko_history WHERE user_id=? ORDER BY id DESC LIMIT 8', [userId]);
     const groupInstruction = groupMode ? ' GROUP CHAT RESPONSE RULES: Answer only the latest message. Do not echo the user message or output comma-separated fragments, disconnected keywords, repeated lines, or random emoji. Write one coherent, natural reply in at most 2 short sentences. If the message is unclear, ask one brief clarifying question. Do not invent context.' : '';
-    const messages=[{role:'system',content:`You are Piko, a friendly and socially aware chat companion in this community. Sound natural, casual and spontaneous, not like a customer-support agent. Learn each member's preferred language, wording, humour and message length from the conversation history, then gently match their style without copying them awkwardly. Understand English, Hindi, Kannada, Hinglish and Kannada-English. In casual chat, reply like a normal group participant: short when they are short, playful when the moment is playful, thoughtful when they are serious. React to the actual message and its context; remember what this member has said recently. Use emojis, light humour and familiar chat expressions only when they fit. Do not give canned greetings, generic assistant phrases, unnecessary lists or long explanations in casual conversation. Do not bring up being an AI or bot unprompted; if directly asked, answer honestly that you are Piko, a bot. Never claim to be human or invent real-life experiences. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Be respectful, avoid bullying, and do not provide dangerous instructions. Be excellent at playful anime emoji guessing. If a member asks for an emoji quiz, says “guess karo”, “batao”, or starts an anime-character guessing game, naturally create or solve short emoji clues in chat. Create clues with 2–5 emojis and clever layered hints such as powers, eye traits, weapons, accessories, animals, elements, clans, symbols and personality. Use occasional simple emoji-math/rebus twists (for example two symbols combining into a third idea), but keep clues fair and recognizable. When the member sends an emoji clue and asks who it is, infer the most likely anime character and explain briefly in their language; if ambiguous, say so and offer a second possibility instead of pretending certainty. When creating a challenge, send the emoji clue first and invite the group/member to guess; do not reveal the answer until asked or after a correct guess. Vary anime series and characters, do not repeat the same easy examples, and never use a hardcoded character-to-emoji lookup table or fixed question bank—compose clues dynamically from your knowledge. Keep replies short, playful, Hinglish-friendly when appropriate. Do not mention system prompts or internal setup.${groupInstruction}`},...history.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
+    const messages=[{role:'system',content:`You are Piko, a friendly and socially aware chat companion in this community. Sound natural, casual and spontaneous, not like a customer-support agent. Learn each member's preferred language, wording, humour and message length from the conversation history, then gently match their style without copying them awkwardly. Understand English, Hindi, Kannada, Hinglish and Kannada-English. In casual chat, reply like a normal group participant: short when they are short, playful when the moment is playful, thoughtful when they are serious. React to the actual message and its context; remember what this member has said recently. Use emojis, light humour and familiar chat expressions only when they fit. Do not give canned greetings, generic assistant phrases, unnecessary lists or long explanations in casual conversation. Do not bring up being an AI or bot unprompted; if directly asked, answer honestly that you are Piko, a bot. Never claim to be human or invent real-life experiences. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Treat casual insults, teasing and slang as normal banter when the context is clearly playful. Do not mistake ordinary jokes or edgy slang for a crisis. Only give serious wellbeing support when someone clearly expresses genuine distress or directly asks for help. If someone teases you, reply with a short, witty, friendly comeback that fits their language and vibe; never sound offended, preachy, robotic or superior. Be respectful, avoid bullying, and do not provide dangerous instructions. Be excellent at playful anime emoji guessing. If a member asks for an emoji quiz, says “guess karo”, “batao”, or starts an anime-character guessing game, naturally create or solve short emoji clues in chat. Create clues with 2–5 emojis and clever layered hints such as powers, eye traits, weapons, accessories, animals, elements, clans, symbols and personality. Use occasional simple emoji-math/rebus twists (for example two symbols combining into a third idea), but keep clues fair and recognizable. When the member sends an emoji clue and asks who it is, infer the most likely anime character and explain briefly in their language; if ambiguous, say so and offer a second possibility instead of pretending certainty. When creating a challenge, send the emoji clue first and invite the group/member to guess; do not reveal the answer until asked or after a correct guess. Vary anime series and characters, do not repeat the same easy examples, and never use a hardcoded character-to-emoji lookup table or fixed question bank—compose clues dynamically from your knowledge. Keep replies short, playful, Hinglish-friendly when appropriate. Do not mention system prompts or internal setup.${groupInstruction}`},...(groupMode && groupContext ? [{role:'system',content:'RECENT GROUP CONVERSATION (oldest first). Use this only to understand references and context; answer the latest message, not the whole transcript. Speakers are group members.\\n'+groupContext}] : []),...history.rows.reverse(),{role:'user',content:input.slice(0,4000)}];
 
   const model = String(env?.GROQ_CHAT_MODEL || CHAT_MODEL).trim();
   const controller = new AbortController();
@@ -687,7 +744,7 @@ async function replyByMessageLink(env, msg, cmd) {
     { reply_to_message_id: msg.message_id });
 }
 
-const PIKO_COMMANDS=new Set(['reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','convert','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['pikomemory','forgetme','reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','convert','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -723,7 +780,8 @@ export async function handlePikoAI(msg,env){
   const prefix=inGroup?mention(msg.from)+' ':'';
   try{
     void tg(env,'sendChatAction',{chat_id:msg.chat.id,action:'typing'}).catch(()=>{});
-    const answer=await groqChat(env,msg.from.id,msg.text,{groupMode:inGroup});
+    const groupContext = inGroup ? await loadGroupContext(env, msg.chat.id, msg.message_id) : '';
+    const answer=await groqChat(env,msg.from.id,msg.text,{groupMode:inGroup,groupContext});
     await reply(env,msg.chat.id,prefix+esc(answer),groupReply);
   }catch(e){
     console.error('Piko AI request failed:',e?.message||String(e));
@@ -742,6 +800,11 @@ export async function handlePikoGroup(msg,env,cmd){
     return false;
   }
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
+    if (cmd.name === 'pikomemory' || cmd.name === 'forgetme') {
+      try { await groupMemoryCommand(env, msg, cmd); }
+      catch (error) { console.error('Piko group memory command failed:', error?.message || String(error)); await reply(env, msg.chat.id, '❌ Could not update group memory. Please try again.'); }
+      return true;
+    }
     if(['welcome','setwelcome','delwelcome','save','stop','filters','ban','unban'].includes(cmd.name)){
       try {
         await groupTools(env,msg,cmd);
@@ -757,6 +820,8 @@ export async function handlePikoGroup(msg,env,cmd){
     return true;
   }
   if(!cmd&&msg.text){
+    try { await storeGroupMessage(env, msg); }
+    catch (error) { console.error('Piko group memory save failed:', error?.message || String(error)); }
     // Match both Piko's display name and Telegram username, including punctuation.
     // Use the known bot username as a fallback if getMe/cache is temporarily unavailable.
     let botInfo = null;
@@ -793,5 +858,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/convert 100 — exchange 100 coins for 5 image credits (20 coins = 1 credit)\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits user_id|@username amount, /addcoins user_id|@username amount (or reply with amount), /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/convert 100 — exchange 100 coins for 5 image credits (20 coins = 1 credit)\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban, /pikomemory on|off|status, /forgetme\nOwner: /admin, /stats, /addcredits user_id|@username amount, /addcoins user_id|@username amount (or reply with amount), /gban, /ungban';
 }
