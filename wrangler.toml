@@ -15,3 +15,6 @@ TOPIC_END_IDLE_MINUTES = "10"
 
 [triggers]
 crons = ["* * * * *"]
+
+[ai]
+binding = "AI"
