@@ -381,18 +381,69 @@ async function funCommand(env,msg,cmd){
   }
 }
 async function imageCommand(env,msg,cmd){
-  const prompt=String(cmd.arg||'').trim(); if(!prompt)return reply(env,msg.chat.id,'Usage: /img describe your image');
-  const p=await profile(env,msg.from);if(p.credits<5)return reply(env,msg.chat.id,'You need 5 credits. Use /daily to earn coins; ask the owner about credits.');
-  const status=await reply(env,msg.chat.id,'🎨 Piko is creating your image…');
+  const prompt=String(cmd.arg||'').trim();
+  if(!prompt)return reply(env,msg.chat.id,'Usage: /img describe your image');
+  if(prompt.length>1200)return reply(env,msg.chat.id,'Please keep image prompts under 1,200 characters.');
+  const apiKey=String(env?.POLLINATIONS_API_KEY||'').trim();
+  if(!apiKey)return reply(env,msg.chat.id,'🖼️ Image generation is not configured yet. The owner needs to add POLLINATIONS_API_KEY in Cloudflare Worker secrets.');
+  const p=await profile(env,msg.from);
+  if(p.credits<5)return reply(env,msg.chat.id,'You need 5 credits. Use /daily to earn coins; ask the owner about credits.');
+
+  // Reserve credits atomically so simultaneous /img requests cannot overspend.
+  const charge=await q(env,'UPDATE piko_profiles SET credits=credits-5 WHERE user_id=? AND credits>=5',[msg.from.id]);
+  if(!charge.rowsAffected)return reply(env,msg.chat.id,'You need 5 credits. Use /daily to earn coins; ask the owner about credits.');
+
+  const status=await reply(env,msg.chat.id,'🎨 Piko is creating your image… This may take a little while.');
+  let completed=false;
   try{
-    const url='https://image.pollinations.ai/prompt/'+encodeURIComponent(prompt)+'?width=1024&height=1024&nologo=true';
-    const res=await fetch(url);if(!res.ok)throw new Error('Image provider returned '+res.status);
-    const blob=await res.blob();if(blob.size>10*1024*1024)throw new Error('Image is too large');
-    const sent=await tgForm(env,'sendPhoto',{chat_id:msg.chat.id,caption:'🎨 <b>Piko AI Image</b>\n'+esc(prompt.slice(0,700)),parse_mode:'HTML'},'photo',blob,'piko.png');
-    if(!sent.ok)throw new Error(sent.description||'Telegram upload failed');
-    await q(env,'UPDATE piko_profiles SET credits=credits-5 WHERE user_id=? AND credits>=5',[msg.from.id]);
-    await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:status.result.message_id});
-  }catch(e){await tg(env,'editMessageText',{chat_id:msg.chat.id,message_id:status.result.message_id,text:'Image generation failed. Please try again later.'});}
+    const model=String(env?.POLLINATIONS_IMAGE_MODEL||'zimage').trim();
+    const url='https://gen.pollinations.ai/image/'+encodeURIComponent(prompt)+'?model='+encodeURIComponent(model)+'&width=1024&height=1024';
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),90000);
+    let res;
+    try{
+      res=await fetch(url,{
+        method:'GET',
+        headers:{Authorization:'Bearer '+apiKey,Accept:'image/*'},
+        signal:controller.signal
+      });
+    }finally{
+      clearTimeout(timer);
+    }
+    if(!res.ok){
+      const detail=(await res.text()).slice(0,500);
+      throw new Error('Pollinations HTTP '+res.status+': '+detail);
+    }
+    const contentType=String(res.headers.get('content-type')||'').toLowerCase();
+    if(!contentType.startsWith('image/'))throw new Error('Image provider returned non-image content: '+contentType);
+    const blob=await res.blob();
+    if(!blob.size)throw new Error('Image provider returned an empty file');
+    if(blob.size>10*1024*1024)throw new Error('Generated image exceeds Telegram upload limit');
+
+    const sent=await tgForm(env,'sendPhoto',{
+      chat_id:msg.chat.id,
+      caption:'🎨 <b>Piko AI Image</b>\n'+esc(prompt.slice(0,700)),
+      parse_mode:'HTML'
+    },'photo',blob,'piko.png');
+    if(!sent?.ok)throw new Error('Telegram upload failed: '+String(sent?.description||'Unknown Telegram error'));
+
+    completed=true;
+    if(status?.result?.message_id)await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:status.result.message_id});
+  }catch(error){
+    console.error('Piko image generation failed:',{
+      message:error?.message||String(error),
+      user_id:msg.from?.id,
+      chat_id:msg.chat?.id
+    });
+    // Failed generations and Telegram uploads do not consume credits.
+    try{await q(env,'UPDATE piko_profiles SET credits=credits+5 WHERE user_id=?',[msg.from.id]);}
+    catch(refundError){console.error('Piko image credit refund failed:',refundError?.message||String(refundError));}
+    const message=error?.name==='AbortError'
+      ? '⏳ Image generation took too long. Your 5 credits have been refunded; please try again.'
+      : '❌ Image generation failed. Your 5 credits have been refunded. Please try again in a moment.';
+    if(status?.result?.message_id)await tg(env,'editMessageText',{chat_id:msg.chat.id,message_id:status.result.message_id,text:message});
+    else await reply(env,msg.chat.id,message);
+  }
 }
 
 async function voiceCommand(env,msg){
