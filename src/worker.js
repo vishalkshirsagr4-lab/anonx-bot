@@ -244,10 +244,10 @@ export default {
       }
 
       try {
-        await initDB(env);
-
+        // Webhook registration is a Telegram API operation and must not depend
+        // on Turso being reachable. Database health is checked by /health and
+        // normal update processing, separately.
         const hook = `${url.origin}/webhook`;
-
         const result = await tg(env, 'setWebhook', {
           url: hook,
           secret_token: webhookSecret,
@@ -259,35 +259,54 @@ export default {
         });
 
         if (!result?.ok) {
-          console.error('Telegram rejected webhook setup:', result);
+          const description = String(result?.description || result?.error || 'Unknown Telegram API error').slice(0, 300);
+          const errorCode = Number.isFinite(Number(result?.error_code)) ? Number(result.error_code) : null;
+          console.error('Telegram rejected webhook setup:', { error_code: errorCode, description });
 
-          return new Response(
-            'Telegram webhook setup failed.',
-            { status: 502 }
-          );
+          return new Response(JSON.stringify({
+            ok: false,
+            error: 'Telegram rejected webhook setup.',
+            telegram_error_code: errorCode,
+            telegram_description: description
+          }, null, 2), {
+            status: 502,
+            headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+          });
         }
 
-        const commandsResult = await setupCommands(env);
-
-        if (commandsResult?.ok === false) {
-          console.error('Telegram command setup failed.');
-
-          return new Response(
-            'Webhook configured, but command setup failed.',
-            { status: 502 }
-          );
-        }
-
-        return new Response(
-          `Webhook configured successfully.\n${hook}`,
-          {
-            status: 200,
-            headers: {
-              'Content-Type': 'text/plain',
-              'Cache-Control': 'no-store'
-            }
+        // Command-menu setup is supplementary. Do not report webhook failure
+        // after Telegram has already accepted the webhook.
+        let commandsConfigured = false;
+        let commandsWarning = null;
+        try {
+          const commandsResult = await setupCommands(env);
+          commandsConfigured = commandsResult?.ok !== false;
+          if (!commandsConfigured) {
+            commandsWarning = String(commandsResult?.description || 'Telegram did not accept the command menu.').slice(0, 250);
           }
-        );
+        } catch (commandsError) {
+          commandsWarning = String(commandsError?.message || commandsError || 'Command menu setup failed.').slice(0, 250);
+          console.error('Telegram command setup failed:', commandsWarning);
+        }
+
+        // Read back Telegram's registration so the response confirms the
+        // actual URL, not only the setWebhook acknowledgement.
+        const verification = await tg(env, 'getWebhookInfo', {});
+        const registeredUrl = verification?.ok ? String(verification.result?.url || '') : '';
+        const urlMatches = registeredUrl === hook;
+
+        return new Response(JSON.stringify({
+          ok: true,
+          webhook_configured: true,
+          expected_url: hook,
+          registered_url_matches: verification?.ok ? urlMatches : null,
+          verification_error: verification?.ok ? null : String(verification?.description || 'Could not verify webhook URL.').slice(0, 250),
+          commands_configured: commandsConfigured,
+          commands_warning: commandsWarning
+        }, null, 2), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
       } catch (error) {
         console.error('Webhook setup error:', error);
 
