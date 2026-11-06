@@ -843,14 +843,20 @@ export async function handlePikoGroup(msg,env,cmd){
       entities.some(entity => entity.type === 'mention' &&
         text.slice(entity.offset, entity.offset + entity.length).toLowerCase() === '@' + username)
     );
-    const escapedName = botName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const nameMention = !!botName && new RegExp('(^|[^\\p{L}\\p{N}_])' + escapedName + '($|[^\\p{L}\\p{N}_])', 'iu').test(text);
+    // Strict group trigger: only an explicit @username mention or a direct
+    // reply to this exact bot may start AI. A plain display-name word is not
+    // enough, preventing accidental replies during normal group conversation.
     const replied = msg.reply_to_message?.from;
     const repliedToPiko = !!(replied?.is_bot && (
       (botInfo?.id && Number(replied.id) === Number(botInfo.id)) ||
       (username && String(replied.username || '').toLowerCase() === username)
     ));
-    if(usernameMention || nameMention || repliedToPiko){
+    if (usernameMention || repliedToPiko) {
+      console.log('Piko group AI trigger accepted:', {
+        chat_id: String(msg.chat.id),
+        message_id: msg.message_id,
+        trigger: usernameMention ? 'username_mention' : 'reply_to_bot'
+      });
       await handlePikoAI({...msg, text: text.trim() || 'Someone called your name. Reply naturally.'}, env);
       return true;
     }
