@@ -383,13 +383,13 @@ async function sendFunMedia(env,chatId,name,replyTo){
   if(!Number.isInteger(replyTo)||replyTo<=0){
     return {ok:false,reason:'I could not identify the original message. Reply directly to the member message.'};
   }
-  const valid=items.filter(item=>item&&typeof item.file_id==='string'&&item.file_id&&['sticker','animation'].includes(item.type));
+  const valid=items.filter(item=>item&&typeof item.file_id==='string'&&item.file_id&&['sticker','animation','document','video'].includes(item.type));
   if(!valid.length){
-    return {ok:false,reason:'The saved /'+name+' pack has no valid Telegram file IDs. Please configure it again with /set'+name+'.'};
+    return {ok:false,reason:'The saved /'+name+' pack has no valid Telegram media IDs. Please configure it again with /set'+name+'.'};
   }
   const item=valid[rand(0,valid.length-1)];
-  const method=item.type==='animation'?'sendAnimation':'sendSticker';
-  const mediaField=item.type==='animation'?'animation':'sticker';
+  const method={sticker:'sendSticker',animation:'sendAnimation',document:'sendDocument',video:'sendVideo'}[item.type];
+  const mediaField={sticker:'sticker',animation:'animation',document:'document',video:'video'}[item.type];
   const result=await tg(env,method,{
     chat_id:chatId,
     [mediaField]:item.file_id,
@@ -417,17 +417,23 @@ async function setFunMedia(env,msg,cmd){
   return true;
 }
 async function handleFunMediaSetup(env,msg,cmd){
-  if(!isOwner(msg.from.id))return false;
+  // Setup is a private-chat flow; a pending setup must never swallow group actions.
+  if(msg.chat?.type!=='private'||!isOwner(msg.from.id))return false;
   const pending=await kvGet(env,'piko_media_pending:'+msg.from.id);
-  if(!pending)return false;
+  if(!pending||!FUN_MEDIA_COMMANDS.includes(String(pending)))return false;
   if(cmd?.name==='cancel'){
     await kvDel(env,'piko_media_pending:'+msg.from.id);
     await reply(env,msg.chat.id,'✅ Media setup cancelled. Previously saved media is kept.');
     return true;
   }
-  const media=msg.sticker?{type:'sticker',file_id:msg.sticker.file_id}:msg.animation?{type:'animation',file_id:msg.animation.file_id}:null;
+  // Accept stickers, Telegram animations, videos, and GIF/MP4 files sent as documents.
+  const media=msg.sticker?{type:'sticker',file_id:msg.sticker.file_id}
+    :msg.animation?{type:'animation',file_id:msg.animation.file_id}
+    :msg.video?{type:'video',file_id:msg.video.file_id}
+    :(msg.document&&/^(image\/gif|video\/mp4)$/i.test(String(msg.document.mime_type||'')))
+      ?{type:'document',file_id:msg.document.file_id}:null;
   if(!media){
-    await reply(env,msg.chat.id,'Please send a Telegram sticker or GIF/animation. Send /cancel to finish.');
+    await reply(env,msg.chat.id,'Please send a Telegram sticker, GIF/animation, MP4 video, or GIF/MP4 as a file. Send /cancel to finish.');
     return true;
   }
   const key='piko_media:'+pending;
