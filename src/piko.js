@@ -426,6 +426,8 @@ async function handleFunMediaSetup(env,msg,cmd){
     await reply(env,msg.chat.id,'✅ Media setup cancelled. Previously saved media is kept.');
     return true;
   }
+  // Allow switching directly from one pack setup to another without requiring /cancel.
+  if(cmd?.name?.startsWith('set')&&FUN_MEDIA_COMMANDS.includes(cmd.name.slice(3)))return false;
   // Accept stickers, Telegram animations, videos, and GIF/MP4 files sent as documents.
   const media=msg.sticker?{type:'sticker',file_id:msg.sticker.file_id}
     :msg.animation?{type:'animation',file_id:msg.animation.file_id}
