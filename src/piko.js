@@ -394,8 +394,8 @@ async function sendFunMedia(env,chatId,name,replyTo){
   const ordered=valid.slice(offset).concat(valid.slice(0,offset));
   let lastError='Unknown Telegram API error';
   for(const item of ordered){
-    const method={sticker:'sendSticker',animation:'sendAnimation',document:'sendAnimation',video:'sendVideo'}[item.type];
-    const mediaField={sticker:'sticker',animation:'animation',document:'animation',video:'video'}[item.type];
+    const method={sticker:'sendSticker',animation:'sendAnimation',document:'sendDocument',video:'sendVideo'}[item.type];
+    const mediaField={sticker:'sticker',animation:'animation',document:'document',video:'video'}[item.type];
     const result=await tg(env,method,{
       chat_id:chatId,
       [mediaField]:item.file_id,
@@ -439,7 +439,7 @@ async function handleFunMediaSetup(env,msg,cmd){
     :msg.animation?{type:'animation',file_id:msg.animation.file_id}
     :msg.video?{type:'video',file_id:msg.video.file_id}
     :(msg.document&&/^(image\/gif|video\/mp4)$/i.test(String(msg.document.mime_type||'')))
-      ?{type:'animation',file_id:msg.document.file_id}:null;
+      ?{type:'document',file_id:msg.document.file_id}:null;
   if(!media){
     await reply(env,msg.chat.id,'Please send a Telegram sticker, GIF/animation, MP4 video, or GIF/MP4 as a file. Send /cancel to finish.');
     return true;
