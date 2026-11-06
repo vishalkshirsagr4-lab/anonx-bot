@@ -374,11 +374,11 @@ function findFunTarget(msg) {
   if(raw)return {id:0,username:raw[1],first_name:'@'+raw[1]};
   return null;
 }
-const FUN_MEDIA_COMMANDS=['hug','wave','highfive','cheer','kick','punch','slap'];
+const FUN_MEDIA_COMMANDS=['hug','kiss','wave','highfive','cheer','kick','punch','slap'];
 async function sendFunMedia(env,chatId,name,replyTo){
   const items=await kvGet(env,'piko_media:'+name,true);
   if(!Array.isArray(items)||!items.length){
-    return {ok:false,reason:'No saved stickers found for /'+name+'. Configure the pack again in Piko DM using /set'+name+'.'};
+    return {ok:false,reason:'No saved media found for /'+name+'. Configure it in Piko DM using /set'+name+'.'};
   }
   if(!Number.isInteger(replyTo)||replyTo<=0){
     return {ok:false,reason:'I could not identify the original message. Reply directly to the member message.'};
@@ -387,25 +387,31 @@ async function sendFunMedia(env,chatId,name,replyTo){
   if(!valid.length){
     return {ok:false,reason:'The saved /'+name+' pack has no valid Telegram media IDs. Please configure it again with /set'+name+'.'};
   }
-  const item=valid[rand(0,valid.length-1)];
-  const method={sticker:'sendSticker',animation:'sendAnimation',document:'sendDocument',video:'sendVideo'}[item.type];
-  const mediaField={sticker:'sticker',animation:'animation',document:'document',video:'video'}[item.type];
-  const result=await tg(env,method,{
-    chat_id:chatId,
-    [mediaField]:item.file_id,
-    reply_to_message_id:replyTo
-  });
-  if(!result?.ok){
-    const description=String(result?.description||'Unknown Telegram API error').slice(0,220);
-    console.error('Piko fun media send failed:',{name,method,replyTo,error_code:result?.error_code,description});
-    return {ok:false,reason:'Telegram rejected the saved media: '+description};
+  // Randomize the first choice, then try every remaining saved item if Telegram
+  // rejects one. A single stale/unsupported file_id must not break the command.
+  const offset=rand(0,valid.length-1);
+  const ordered=valid.slice(offset).concat(valid.slice(0,offset));
+  let lastError='Unknown Telegram API error';
+  for(const item of ordered){
+    const method={sticker:'sendSticker',animation:'sendAnimation',document:'sendDocument',video:'sendVideo'}[item.type];
+    const mediaField={sticker:'sticker',animation:'animation',document:'document',video:'video'}[item.type];
+    const result=await tg(env,method,{
+      chat_id:chatId,
+      [mediaField]:item.file_id,
+      reply_to_message_id:replyTo
+    });
+    if(result?.ok){
+      const actualReplyId=result.result?.reply_to_message?.message_id;
+      if(Number.isInteger(actualReplyId)&&actualReplyId!==replyTo){
+        console.error('Piko fun media reply mismatch:',{name,replyTo,actualReplyId});
+        return {ok:false,reason:'Telegram attached the media to a different message. Please report this to the bot owner.'};
+      }
+      return {ok:true};
+    }
+    lastError=String(result?.description||'Unknown Telegram API error').slice(0,220);
+    console.error('Piko fun media item failed; trying next item:',{name,type:item.type,error_code:result?.error_code,description:lastError});
   }
-  const actualReplyId=result.result?.reply_to_message?.message_id;
-  if(Number.isInteger(actualReplyId)&&actualReplyId!==replyTo){
-    console.error('Piko fun media reply mismatch:',{name,replyTo,actualReplyId});
-    return {ok:false,reason:'Telegram sent the sticker but attached it to a different message. Please report this to the bot owner.'};
-  }
-  return {ok:true};
+  return {ok:false,reason:'Telegram rejected every saved item in /'+name+' pack. Last error: '+lastError+'. Rebuild this pack with /set'+name+'.'};
 }
 async function setFunMedia(env,msg,cmd){
   if(!isOwner(msg.from.id)){await reply(env,msg.chat.id,'⛔ Owner only.');return true;}
@@ -757,7 +763,7 @@ async function replyByMessageLink(env, msg, cmd) {
     { reply_to_message_id: msg.message_id });
 }
 
-const PIKO_COMMANDS=new Set(['pikomemory','forgetme','reply','sethug','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','convert','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['pikomemory','forgetme','reply','sethug','setkiss','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','convert','img','ship','roll','hug','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
@@ -769,7 +775,7 @@ export async function handlePikoDM(msg,env,cmd){
     if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay','convert'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}
-    if(['ship','roll','hug','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
+    if(['ship','roll','hug','kiss','slap','punch','kick','wave','highfive','cheer'].includes(cmd.name)){await funCommand(env,msg,cmd);return true;}
     if(['admin','stats','addcredits','addcoins','gban','ungban'].includes(cmd.name)){await adminCommand(env,msg,cmd);return true;}
   }
   return false;
@@ -877,5 +883,5 @@ export async function handlePikoGroup(msg,env,cmd){
 }
 
 export async function pikoHelpText(){
- return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/convert 100 — exchange 100 coins for 5 image credits (20 coins = 1 credit)\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /wave, /highfive, /cheer (reply or tag a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban, /pikomemory on|off|status, /forgetme\nOwner: /admin, /stats, /addcredits user_id|@username amount, /addcoins user_id|@username amount (or reply with amount), /gban, /ungban';
+ return '🤖 <b>Piko features</b>\n\n/reply <link> <text> — reply to a linked Telegram message\n/reply <text> <link> — same format\n/reply <link> — copy a linked message or media\n\n\nAI chat: send a DM\nVoice: send a voice message\n/credits — credits and coins\n/convert 100 — exchange 100 coins for 5 image credits (20 coins = 1 credit)\n/img prompt — generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay\n/ship @username — friendship percentage\n/roll — Telegram rolling die 🎲\n/hug, /kiss, /wave, /highfive, /cheer (reply to a member)\n/slap, /punch, /kick use playful cartoon sticker/GIF packs\nMusic: /search song, /play song, /song song, /video song, /music song (official platform links)\nOwner media setup in DM: /sethug, /setkiss, /setwave, /sethighfive, /setcheer, /setkick, /setpunch, /setslap (send multiple stickers/GIFs, then /cancel)\nGroup tools: /whisper @username message (private DM; recipient must have started Piko), /welcome, /setwelcome, /save, /stop, /filters, /ban, /unban, /pikomemory on|off|status, /forgetme\nOwner: /admin, /stats, /addcredits user_id|@username amount, /addcoins user_id|@username amount (or reply with amount), /gban, /ungban';
 }
