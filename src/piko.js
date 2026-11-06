@@ -385,33 +385,33 @@ async function sendFunMedia(env,chatId,name,replyTo){
   }
   const valid=items.filter(item=>item&&typeof item.file_id==='string'&&item.file_id&&['sticker','animation','document','video'].includes(item.type));
   if(!valid.length){
-    return {ok:false,reason:'The saved /'+name+' pack has no valid Telegram media IDs. Please configure it again with /set'+name+'.'};
+    return {ok:false,reason:'The saved /'+name+' pack has no valid Telegram media IDs. Reconfigure it using /set'+name+'.'};
   }
-  // Randomize the first choice, then try every remaining saved item if Telegram
-  // rejects one. A single stale/unsupported file_id must not break the command.
+
+  // Use Telegram's current reply_parameters field for a guaranteed reply link.
+  // Legacy reply_to_message_id is not sent together with reply_parameters.
   const offset=rand(0,valid.length-1);
   const ordered=valid.slice(offset).concat(valid.slice(0,offset));
   let lastError='Unknown Telegram API error';
   for(const item of ordered){
-    const method={sticker:'sendSticker',animation:'sendAnimation',document:'sendDocument',video:'sendVideo'}[item.type];
-    const mediaField={sticker:'sticker',animation:'animation',document:'document',video:'video'}[item.type];
+    const method={sticker:'sendSticker',animation:'sendAnimation',document:'sendAnimation',video:'sendVideo'}[item.type];
+    const mediaField={sticker:'sticker',animation:'animation',document:'animation',video:'video'}[item.type];
     const result=await tg(env,method,{
       chat_id:chatId,
       [mediaField]:item.file_id,
-      reply_to_message_id:replyTo
+      reply_parameters:{message_id:replyTo,allow_sending_without_reply:false}
     });
     if(result?.ok){
       const actualReplyId=result.result?.reply_to_message?.message_id;
-      if(Number.isInteger(actualReplyId)&&actualReplyId!==replyTo){
-        console.error('Piko fun media reply mismatch:',{name,replyTo,actualReplyId});
-        return {ok:false,reason:'Telegram attached the media to a different message. Please report this to the bot owner.'};
+      if(actualReplyId!==replyTo){
+        console.error('Piko fun media response did not confirm target reply:',{name,replyTo,actualReplyId:actualReplyId??null,method});
       }
       return {ok:true};
     }
     lastError=String(result?.description||'Unknown Telegram API error').slice(0,220);
-    console.error('Piko fun media item failed; trying next item:',{name,type:item.type,error_code:result?.error_code,description:lastError});
+    console.error('Piko fun media send failed; trying next saved item:',{name,type:item.type,method,error_code:result?.error_code,description:lastError});
   }
-  return {ok:false,reason:'Telegram rejected every saved item in /'+name+' pack. Last error: '+lastError+'. Rebuild this pack with /set'+name+'.'};
+  return {ok:false,reason:'Telegram could not send any saved item in /'+name+' pack as a reply. Last error: '+lastError+'. Please reconfigure this pack with /set'+name+'.'};
 }
 async function setFunMedia(env,msg,cmd){
   if(!isOwner(msg.from.id)){await reply(env,msg.chat.id,'⛔ Owner only.');return true;}
@@ -439,7 +439,7 @@ async function handleFunMediaSetup(env,msg,cmd){
     :msg.animation?{type:'animation',file_id:msg.animation.file_id}
     :msg.video?{type:'video',file_id:msg.video.file_id}
     :(msg.document&&/^(image\/gif|video\/mp4)$/i.test(String(msg.document.mime_type||'')))
-      ?{type:'document',file_id:msg.document.file_id}:null;
+      ?{type:'animation',file_id:msg.document.file_id}:null;
   if(!media){
     await reply(env,msg.chat.id,'Please send a Telegram sticker, GIF/animation, MP4 video, or GIF/MP4 as a file. Send /cancel to finish.');
     return true;
