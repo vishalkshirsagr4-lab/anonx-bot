@@ -829,9 +829,9 @@ function memberWelcomeCaption(member, chat, configuredText) {
         .replaceAll('{username}', username)
         .replaceAll('{chatname}', chatName);
 
-  return '✨ <b>NEW MEMBER ALERT</b> ✨\\n\\n' +
-    '👋 ' + customLine + '\\n\\n' +
-    '🏡 <b>' + chatName + '</b>\\n' +
+  return '✨ <b>NEW MEMBER ALERT</b> ✨\n\n' +
+    '👋 ' + customLine + '\n\n' +
+    '🏡 <b>' + chatName + '</b>\n' +
     'We are glad you are here! Make yourself at home, join the conversation and have fun. 💫';
 }
 
