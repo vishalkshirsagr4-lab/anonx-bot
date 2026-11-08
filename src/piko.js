@@ -576,8 +576,8 @@ async function groupTools(env,msg,cmd){
   }
 
   if(cmd.name==='delwelcome'){
-    await q(env,'INSERT INTO piko_groups(chat_id,welcome_enabled,welcome_text) VALUES(?,0,?) ON CONFLICT(chat_id) DO UPDATE SET welcome_enabled=0,welcome_text=excluded.welcome_text',[chat,'Welcome {first} to {chatname}! 🎉']);
-    return reply(env,chat,'✅ Welcome messages disabled and the custom text reset. Use /welcome on to enable them again.');
+    await q(env,'INSERT INTO piko_groups(chat_id,welcome_enabled,welcome_text) VALUES(?,0,?) ON CONFLICT(chat_id) DO UPDATE SET welcome_enabled=0,welcome_text=excluded.welcome_text',[chat,'Welcome aboard, {first}! 🎉']);
+    return reply(env,chat,'✅ Welcome messages are OFF and the custom text has been reset. Use /welcome on to enable the new video welcome again.');
   }
 
   if(cmd.name==='save'){
@@ -810,13 +810,81 @@ export async function handlePikoAI(msg,env){
   return true;
 }
 
+const MEMBER_WELCOME_VIDEOS = [
+  'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/VID_20261108_165834_492.mp4',
+  'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/animation.gif.mp4'
+];
+
+function memberWelcomeCaption(member, chat, configuredText) {
+  const legacyDefault = 'Welcome {first} to {chatname}! 🎉';
+  const configured = String(configuredText || '').trim();
+  const isDefault = !configured || configured === legacyDefault || configured === 'Welcome aboard, {first}! 🎉';
+  const first = esc(member.first_name || 'friend');
+  const username = esc(member.username ? '@' + member.username : member.first_name || 'friend');
+  const chatName = esc(chat.title || 'our community');
+  const customLine = isDefault
+    ? 'A warm welcome to ' + mention(member) + '! 🎉'
+    : esc(configured.slice(0, 600))
+        .replaceAll('{first}', first)
+        .replaceAll('{username}', username)
+        .replaceAll('{chatname}', chatName);
+
+  return '✨ <b>NEW MEMBER ALERT</b> ✨\\n\\n' +
+    '👋 ' + customLine + '\\n\\n' +
+    '🏡 <b>' + chatName + '</b>\\n' +
+    'We are glad you are here! Make yourself at home, join the conversation and have fun. 💫';
+}
+
+async function sendMemberWelcome(env, msg, member, welcomeText) {
+  const caption = memberWelcomeCaption(member, msg.chat, welcomeText);
+  const order = Math.random() < 0.5
+    ? MEMBER_WELCOME_VIDEOS
+    : [MEMBER_WELCOME_VIDEOS[1], MEMBER_WELCOME_VIDEOS[0]];
+  const options = {
+    chat_id: msg.chat.id,
+    caption,
+    parse_mode: 'HTML',
+    supports_streaming: true,
+    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true },
+    reply_markup: {
+      inline_keyboard: [[{ text: '📚 Help & Commands', callback_data: 'help_main_start' }]]
+    }
+  };
+
+  // Randomly try either repository MP4 first; use the other if Telegram cannot fetch it.
+  for (const video of order) {
+    const sent = await tg(env, 'sendVideo', { ...options, video });
+    if (sent?.ok) return true;
+    console.error('Piko member welcome video failed:', {
+      chat_id: String(msg.chat.id),
+      member_id: member.id,
+      video,
+      error_code: sent?.error_code,
+      description: String(sent?.description || 'Unknown Telegram error').slice(0, 220)
+    });
+  }
+
+  // A text welcome is better than silently missing a new member if both video URLs fail.
+  const fallback = await reply(env, msg.chat.id, caption, {
+    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true },
+    reply_markup: options.reply_markup
+  });
+  if (!fallback?.ok) console.error('Piko member welcome text fallback failed:', fallback?.description || 'Unknown Telegram error');
+  return !!fallback?.ok;
+}
+
 export async function handlePikoGroup(msg,env,cmd){
   await ensureSchema(env);
   if(msg.new_chat_members?.length){
     const r=await q(env,'SELECT welcome_enabled,welcome_text FROM piko_groups WHERE chat_id=?',[String(msg.chat.id)]);
-    const setting=r.rows[0]||{welcome_enabled:1,welcome_text:'Welcome {first} to {chatname}! 🎉'};
-    if(setting.welcome_enabled)for(const m of msg.new_chat_members){if(m.is_bot)continue;const text=String(setting.welcome_text).replaceAll('{first}',m.first_name||'friend').replaceAll('{username}',m.username?'@'+m.username:m.first_name||'friend').replaceAll('{chatname}',msg.chat.title||'this group');await reply(env,msg.chat.id,esc(text));}
-    return false;
+    const setting=r.rows[0]||{welcome_enabled:1,welcome_text:'Welcome aboard, {first}! 🎉'};
+    if(Number(setting.welcome_enabled)!==0){
+      for(const member of msg.new_chat_members){
+        if(member.is_bot)continue;
+        await sendMemberWelcome(env,msg,member,setting.welcome_text);
+      }
+    }
+    return true;
   }
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     if (cmd.name === 'pikomemory' || cmd.name === 'forgetme') {
