@@ -213,7 +213,7 @@ async function handleDM(msg, env, ctx) {
         }
         const spec = await welcomeSpec(env, msg.from);
         const startTxt = await dashboardCaption(env, msg.from);
-        const markup = dashboardMarkup();
+        const markup = await dashboardMarkup(env, msg.from);
         const photo = await tg(env, 'sendPhoto', {
           chat_id: chatId,
           photo: 'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/pippo.jpg',
@@ -226,6 +226,19 @@ async function handleDM(msg, env, ctx) {
         return send(env, chatId, startTxt, { card: spec, reply_markup: markup });
       }
 
+      case 'profile': {
+        const startTxt = await dashboardCaption(env, msg.from);
+        const markup = await dashboardMarkup(env, msg.from);
+        return tg(env, 'sendPhoto', {
+          chat_id: chatId,
+          photo: 'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/pippo.jpg',
+          caption: startTxt,
+          parse_mode: 'HTML',
+          reply_markup: markup
+        });
+      }
+      case 'plans':
+        return send(env, chatId, '<b>💎 PLANS / UPGRADE</b>\\n<blockquote>Subscription plans are not configured yet. No payment is processed from this page.</blockquote>');
       case 'help': {
         const v = helpMainView(userId, 'help');
         return send(env, chatId, v.text, {
@@ -518,6 +531,8 @@ async function handleSubmitEntry(env, msg, runId) {
 export async function setupCommands(env) {
   const user = [
     { command: 'start', description: 'Main menu' },
+    { command: 'profile', description: 'View your Piko profile' },
+    { command: 'plans', description: 'View plans and upgrades' },
     { command: 'ask', description: 'Anonymous question' },
     { command: 'reveal', description: 'Reveal while replying' },
     { command: 'reply', description: 'Reply to a Telegram message link' },

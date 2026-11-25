@@ -1,110 +1,157 @@
 // src/dashboard.js
-// Piko's refreshed private-chat dashboard with Telegram-native rich formatting.
+// AnonX/Piko dashboard: compact media card, live wallet progress and in-place navigation.
 import { state } from './config.js';
 import { q } from './db.js';
 import { tg } from './telegram.js';
 import { editCq } from './cards.js';
 import { esc } from './helpers.js';
 
-export function dashboardMarkup() {
-  const rows = [
-    [
-      { text: '🤖  CHAT WITH PIKO', callback_data: 'dash_ai', style: 'success' },
-      { text: '🎨  AI STUDIO', callback_data: 'dash_image', style: 'primary' }
-    ],
-    [
-      { text: '🕵️  ANONYMOUS', callback_data: 'dash_anon', style: 'primary' },
-      { text: '🏆  CONTESTS', callback_data: 'dash_contests', style: 'success' }
-    ],
-    [
-      { text: '👛  MY WALLET', callback_data: 'dash_wallet', style: 'primary' },
-      { text: '🎭  FUN & STICKERS', callback_data: 'dash_fun', style: 'danger' }
-    ],
-    [
-      { text: '📚  HELP CENTER', callback_data: 'dash_help', style: 'primary' },
-      { text: '🔄  REFRESH', callback_data: 'dash_home', style: 'success' }
-    ],
-    [
-      { text: '🆘  SUPPORT', url: state.SUPPORT_GROUP, style: 'primary' },
-      ...(Number(state.OWNER_ID) > 0
-        ? [{ text: '👨‍💻  DEVELOPER', url: 'tg://user?id=' + Number(state.OWNER_ID), style: 'primary' }]
-        : [])
-    ]
-  ];
-  return { inline_keyboard: rows };
-}
+const REWARD_TARGET = 500;
 
-export async function dashboardCaption(env, user) {
+async function getDashboardData(env, user) {
   let coins = 0;
+  let topUsers = [];
   try {
     const result = await q(env, 'SELECT coins FROM users WHERE user_id=? LIMIT 1', [Number(user.id)]);
-    coins = Number(result.rows[0]?.coins || 0);
+    coins = Math.max(0, Number(result.rows[0]?.coins || 0));
   } catch (error) {
     console.error('Piko dashboard wallet lookup failed:', error?.message || String(error));
   }
+  try {
+    const result = await q(env, 'SELECT first_name, coins FROM users ORDER BY coins DESC, user_id ASC LIMIT 10');
+    topUsers = result.rows || [];
+  } catch (error) {
+    console.error('Piko dashboard leaderboard lookup failed:', error?.message || String(error));
+  }
+  return { coins, topUsers };
+}
 
+function progressBar(coins) {
+  const percent = Math.max(0, Math.min(100, Math.floor((coins / REWARD_TARGET) * 100)));
+  const filled = Math.round(percent / 10);
+  return { percent, bar: '▰'.repeat(filled) + '▱'.repeat(10 - filled) };
+}
+
+function referralUrl(userId, username) {
+  if (!username) return '';
+  return 'https://t.me/' + username.replace(/^@/, '') + '?start=ref_' + Number(userId);
+}
+
+export async function dashboardMarkup(env, user) {
+  let username = '';
+  try {
+    const me = await tg(env, 'getMe', {});
+    username = me?.ok ? String(me.result?.username || '') : '';
+  } catch (error) {
+    console.error('Piko bot username lookup failed:', error?.message || String(error));
+  }
+
+  const link = referralUrl(user.id, username);
+  const shareUrl = link
+    ? 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent('Join me on Piko!')
+    : state.SUPPORT_GROUP;
+
+  return { inline_keyboard: [
+    [
+      { text: '🚀 CREATE / CLAIM', callback_data: 'dash_claim', style: 'success' },
+      { text: '📦 MY ITEMS', callback_data: 'dash_wallet', style: 'primary' }
+    ],
+    [
+      { text: '👤 MY PROFILE', callback_data: 'dash_profile', style: 'danger' },
+      { text: '🏆 LEADERBOARD', callback_data: 'dash_leaderboard', style: 'success' }
+    ],
+    [{ text: '💎 PLANS / UPGRADE', callback_data: 'dash_plans', style: 'primary' }],
+    [{ text: '⚡ BUY POINTS ⭐', callback_data: 'dash_buy', style: 'danger' }],
+    [{ text: '💬 SUPPORT', url: state.SUPPORT_GROUP }],
+    ...(link ? [[{ text: '📤 SHARE REF LINK', url: shareUrl }]] : []),
+    [{ text: '🔄 REFRESH', callback_data: 'dash_home', style: 'primary' }]
+  ] };
+}
+
+export async function dashboardCaption(env, user) {
+  const { coins } = await getDashboardData(env, user);
   const firstName = esc(user.first_name || 'Friend');
-  const coinText = coins.toLocaleString('en-US');
+  const percent = Math.max(0, Math.min(100, Math.floor((coins / REWARD_TARGET) * 100)));
+  const filled = Math.round(percent / 10);
+  const bar = '▰'.repeat(filled) + '▱'.repeat(10 - filled);
+
+  let username = '';
+  try {
+    const me = await tg(env, 'getMe', {});
+    username = me?.ok ? String(me.result?.username || '') : '';
+  } catch {}
+
+  const link = referralUrl(user.id, username);
+  const refLine = link ? '🔗 <b>REF LINK:</b>\n<code>' + esc(link) + '</code>\n' : '';
+
   return (
-    '✦ <b>Ｐ Ｉ Ｋ Ｏ</b>  ✨\n' +
-    '<b>YOUR PERSONAL COMMUNITY HUB</b>\n' +
-    '━━━━━━━━━━━━━━━━━━━━\n\n' +
-    '╭─ <b>YOUR PROFILE</b> ─────────╮\n' +
-    '│  👤 <b>' + firstName + '</b>\n' +
-    '│  🆔 <code>' + Number(user.id) + '</code>\n' +
-    '│  🪙 <b>' + coinText + '</b> coins\n' +
-    '╰──────────────────────╯\n\n' +
-    '<blockquote>Welcome to Piko — your space for AI conversations, anonymous messages, community contests and creative fun.\n\nChoose a section below and let’s get started. ✨</blockquote>' +
-    '\n<b>⚡ QUICK ACCESS</b>  <i>Tap any button</i>'
+    '✦ <b>ＰＩＫＯ • PERSONAL DASHBOARD</b> ✨\n' +
+    '<blockquote>' +
+    '👤 <b>NAME:</b> ' + firstName + '\n' +
+    '🆔 <b>USER ID:</b> <code>' + Number(user.id) + '</code>\n' +
+    '⭐ <b>POINTS:</b> <code>' + coins.toLocaleString('en-US') + '</code>\n' +
+    refLine +
+    '━━━━━━━━━━━━━━━━━━\n' +
+    '🎯 <b>REWARD PROGRESS</b>\n' +
+    bar + ' <b>' + percent + '%</b>\n' +
+    '<i>Next milestone: ' + REWARD_TARGET.toLocaleString('en-US') + ' points</i>' +
+    '</blockquote>\n' +
+    '<b>WELCOME TO PIKO</b>\n' +
+    '<i>AI chat • Anonymous space • Contests • Rewards</i>\n' +
+    'Choose a section below to continue.'
   );
 }
 
 const back = () => ({
-  inline_keyboard: [[{ text: '↩️  BACK TO PIKO HOME', callback_data: 'dash_home', style: 'primary' }]]
+  inline_keyboard: [[{ text: '🔙 BACK TO MENU', callback_data: 'dash_home', style: 'primary' }]]
 });
+
+function page(title, description, details = '') {
+  return '✦ <b>' + title + '</b>\n' +
+    '<blockquote>' + description + (details ? '\n\n' + details : '') + '</blockquote>';
+}
 
 export async function handleDashboardCallback(env, cq, action) {
   const user = cq.from || {};
-  const chatId = cq.message?.chat?.id;
-  if (!chatId) return false;
+  if (!cq.message?.chat?.id) return false;
 
   let text = '';
   let markup = back();
 
   if (action === 'dash_home') {
     text = await dashboardCaption(env, user);
-    markup = dashboardMarkup();
-  } else if (action === 'dash_ai') {
-    text = '🤖 <b>PIKO AI CHAT</b>\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote>Talk naturally with Piko. Ask questions, explore ideas or just have a friendly conversation.</blockquote>\n\n💬 <b>HOW TO START</b>\nSend any message in this private chat.\n\n🎙️ <i>Voice messages are supported when enabled.</i>';
-  } else if (action === 'dash_anon') {
-    text = '🕵️ <b>ANONYMOUS SPACE</b>\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote>Share thoughts and questions with your community while keeping your identity off the public post.</blockquote>\n\n📨 <code>/ask your message</code> — create a post\n💬 <code>/reply</code> — reply to an anonymous post\n🔐 <code>/reveal</code> — view reveal options';
-  } else if (action === 'dash_contests') {
-    text = '🏆 <b>CONTEST ARENA</b>\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote>Take part, share your creativity and see how the community votes.</blockquote>\n\n🎯 <code>/contest</code> — current contest\n📤 <code>/submit</code> — submit an entry\n🗳️ <code>/voting</code> — voting status\n🏅 <code>/voteresult</code> — results';
+    markup = await dashboardMarkup(env, user);
+  } else if (action === 'dash_claim') {
+    text = page('CREATE / CLAIM', 'Your Piko rewards are managed through the existing wallet and daily-claim system.', '🎁 <code>/claim</code> — claim your daily coins\n👛 <code>/wallet</code> — view your wallet\n🎨 <code>/img prompt</code> — create an AI image');
   } else if (action === 'dash_wallet') {
-    let coins = 0;
-    let credits = null;
-    try {
-      const result = await q(env, 'SELECT coins FROM users WHERE user_id=? LIMIT 1', [Number(user.id)]);
-      coins = Number(result.rows[0]?.coins || 0);
-    } catch (error) {
-      console.error('Piko dashboard coin lookup failed:', error?.message || String(error));
-    }
-    try {
-      const result = await q(env, 'SELECT credits FROM piko_profiles WHERE user_id=? LIMIT 1', [Number(user.id)]);
-      if (result.rows.length) credits = Number(result.rows[0].credits);
-    } catch {}
-    text = '👛 <b>YOUR PIKO WALLET</b>\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote>Your rewards and creative credits, together in one place.</blockquote>\n\n🪙 <b>Coins:</b> ' + coins.toLocaleString('en-US') + '\n🎨 <b>Image credits:</b> ' + (credits === null ? 'Use /credits to initialize' : credits) + '\n\n🎁 <code>/daily</code> — daily reward\n💱 <code>/convert 100</code> — exchange coins\n📊 <code>/credits</code> — full wallet details';
-  } else if (action === 'dash_image') {
-    text = '🎨 <b>PIKO AI STUDIO</b>\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote>Turn your original ideas into images with AI.</blockquote>\n\n✍️ Send a prompt like:\n<code>/img a glowing city in a futuristic world</code>\n\n✨ <i>Image generation costs 5 credits per image. Check /credits before creating.</i>';
-  } else if (action === 'dash_fun') {
-    text = '🎭 <b>FUN & STICKER CORNER</b>\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote>Light-hearted reactions and playful commands for your chats.</blockquote>\n\n🎲 <code>/roll</code> — roll a dice\n🤝 <code>/hug</code> — send a friendly hug (reply to a member)\n👋 <code>/wave</code> — wave to someone\n🙌 <code>/highfive</code> — high-five a member\n🌟 <code>/cheer</code> — send encouragement\n\n<i>Sticker packs depend on the bot\'s configured Telegram media.</i>';
-  } else if (action === 'dash_help') {
-    text = '📚 <b>PIKO HELP CENTER</b>\n━━━━━━━━━━━━━━━━━━━━\n\n<blockquote>Everything you need to get started with Piko.</blockquote>\n\n🤖 AI chat — send a message\n🎨 AI images — <code>/img prompt</code>\n🕵️ Anonymous posts — <code>/ask text</code>\n🏆 Contests — <code>/contest</code>\n👛 Wallet — <code>/credits</code>\n\nUse <code>/help</code> for the complete command guide.';
+    const { coins } = await getDashboardData(env, user);
+    text = page('MY ITEMS & WALLET', 'Your current Piko balance and creative tools.', '🪙 <b>COINS:</b> <code>' + coins.toLocaleString('en-US') + '</code>\n🎨 <b>IMAGE CREDITS:</b> use <code>/credits</code> to view your available credits.\n\n🎁 <code>/daily</code> — daily reward');
+  } else if (action === 'dash_profile') {
+    const { coins } = await getDashboardData(env, user);
+    text = page('MY PROFILE', 'Your Telegram account details.', '👤 <b>NAME:</b> ' + esc(user.first_name || 'Friend') + '\n🆔 <b>USER ID:</b> <code>' + Number(user.id) + '</code>\n⭐ <b>POINTS:</b> <code>' + coins.toLocaleString('en-US') + '</code>');
+  } else if (action === 'dash_leaderboard') {
+    const { topUsers } = await getDashboardData(env, user);
+    const lines = topUsers.length
+      ? topUsers.map((row, index) => (index + 1) + '. ' + esc(row.first_name || 'Member') + ' — <code>' + Number(row.coins || 0).toLocaleString('en-US') + '</code> ⭐').join('\n')
+      : 'No leaderboard entries are available yet.';
+    text = page('LEADERBOARD', 'Top Piko members by coin balance.', lines);
+  } else if (action === 'dash_plans') {
+    text = page('PLANS / UPGRADE', 'Piko plan information will be shown here when subscription plans are configured.', 'No subscription or payment is processed from this page yet. Use <code>/credits</code> to check current credits.');
+  } else if (action === 'dash_buy') {
+    text = page('BUY POINTS', 'Coin purchases are not enabled in this bot yet.', 'This page is informational only. No payment is collected and no points are deducted. Check <code>/wallet</code> for your current balance.');
   } else {
     return false;
   }
 
-  await tg(env, 'answerCallbackQuery', { callback_query_id: cq.id });
-  await editCq(env, cq, text, markup);
+  await tg(env, 'answerCallbackQuery', {
+    callback_query_id: cq.id,
+    text: action === 'dash_home' ? 'Dashboard refreshed.' : 'Opened ' + action.replace('dash_', '') + '.',
+    show_alert: false
+  });
+
+  const result = await editCq(env, cq, text, markup);
+  if (!result?.ok && result?.description && !/message is not modified/i.test(result.description)) {
+    console.error('Piko dashboard edit failed:', result.description);
+  }
   return true;
 }
