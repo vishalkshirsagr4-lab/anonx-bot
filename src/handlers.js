@@ -22,6 +22,7 @@ import {
 } from './helpers.js';
 import { detectMedia, validateSubmissionForMode, formatMediaBadge } from './media.js';
 import { handlePikoDM, handlePikoGroup, handlePikoAI, handlePikoVoice } from './piko.js';
+import { dashboardMarkup, dashboardCaption } from './dashboard.js';
 
 // ────────────────────────────────────────────────────────────
 // UPDATE ENTRY
@@ -211,11 +212,8 @@ async function handleDM(msg, env, ctx) {
           });
         }
         const spec = await welcomeSpec(env, msg.from);
-        const startTxt = `Hello ${userLink(msg.from.id, msg.from.first_name)} 👋\n\nI am <b>${esc(state.BOT_NAME)}</b> — your AI and community bot. Chat with Piko, use group tools, post anonymously and join contests.\n\nSelect an option below:`;
-        const markup = { inline_keyboard: [
-          [{ text: '❓ Help & Commands', callback_data: 'help_main_start' }],
-          [{ text: '👨‍💻 Developer', url: `tg://user?id=${state.OWNER_ID}` }, { text: '🆘 Support', url: state.SUPPORT_GROUP }]
-        ] };
+        const startTxt = await dashboardCaption(env, msg.from);
+        const markup = dashboardMarkup();
         const photo = await tg(env, 'sendPhoto', {
           chat_id: chatId,
           photo: 'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/pippo.jpg',

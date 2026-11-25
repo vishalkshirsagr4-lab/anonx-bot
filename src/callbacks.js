@@ -17,12 +17,15 @@ import {
 } from './owner.js';
 import { getBotInfo, esc } from './helpers.js';
 import { handleGameCallback } from './games.js';
+import { handleDashboardCallback } from './dashboard.js';
 
 export async function handleCallback(cq, env) {
   const data = cq.data || '';
   const userId = cq.from.id;
 
   try {
+    if (data.startsWith('dash_')) return handleDashboardCallback(env, cq, data);
+
     // Multiplayer RPS callbacks are routed explicitly before other actions.
     // This avoids older callback dispatchers treating grpm_* buttons as unknown.
     if (data.startsWith('grpm_')) {
