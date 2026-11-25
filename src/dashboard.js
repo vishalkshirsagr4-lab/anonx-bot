@@ -46,7 +46,7 @@ export async function dashboardCaption(env, user) {
   const firstName = esc(user.first_name || 'Friend');
   const coinText = coins.toLocaleString('en-US');
   return (
-    '✦ <b>Ｐ Ｉ Ｋ Ｏ</b>  <tg-emoji emoji-id="5368324170671202286">✨</tg-emoji>\n' +
+    '✦ <b>Ｐ Ｉ Ｋ Ｏ</b>  ✨\n' +
     '<b>YOUR PERSONAL COMMUNITY HUB</b>\n' +
     '━━━━━━━━━━━━━━━━━━━━\n\n' +
     '╭─ <b>YOUR PROFILE</b> ─────────╮\n' +
