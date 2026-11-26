@@ -37,36 +37,47 @@ function wrapStickerQuote(value, maxChars = 37, maxLines = 10) {
 
 function quoteStickerSvg(spec) {
   const user = spec.user || {};
-  const name = String(user.name || 'Telegram member').replace(/\\s+/g, ' ').trim().slice(0, 30);
-  const username = String(user.username || '').replace(/^@/, '').slice(0, 32);
-  const quote = String(spec.subtitle || '').replace(/\\s+/g, ' ').trim().slice(0, 420);
-  const lines = wrapStickerQuote(quote, 24, 9);
-  const fontSize = lines.length > 8 ? 18 : lines.length > 6 ? 20 : 23;
-  const lineHeight = fontSize + 9;
-  const textStartY = 190;
+  const name = String(user.name || 'Telegram member').replace(/\s+/g, ' ').trim().slice(0, 28);
+  const username = String(user.username || '').replace(/^@/, '').slice(0, 30);
+  const quote = String(spec.subtitle || '').replace(/\s+/g, ' ').trim().slice(0, 420);
+  const lines = wrapStickerQuote(quote || ' ', 25, 8);
+  const fontSize = lines.length > 6 ? 19 : lines.length > 4 ? 21 : 23;
+  const lineHeight = fontSize + 10;
+  const textStartY = 207;
   const quoteText = lines.map((line, i) =>
-    '<text x="166" y="' + (textStartY + i * lineHeight) + '" font-family="Arial,sans-serif" font-size="' + fontSize + '" font-weight="500" fill="#182533">' + xmlEscape(line) + '</text>'
+    '<text x="158" y="' + (textStartY + i * lineHeight) +
+    '" font-family="Arial,sans-serif" font-size="' + fontSize +
+    '" font-weight="500" fill="#17212b">' + xmlEscape(line) + '</text>'
   ).join('');
+  const initials = xmlEscape((name || 'T').trim().charAt(0).toUpperCase());
   const avatar = user.pfp_b64
-    ? '<image href="data:image/jpeg;base64,' + user.pfp_b64 + '" x="35" y="93" width="92" height="92" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>'
-    : '<circle cx="81" cy="139" r="46" fill="#dce8f2"/><text x="81" y="153" text-anchor="middle" font-size="42" fill="#52718b">●</text>';
-  const handle = username ? '@' + username : 'Telegram user';
-  const bubbleHeight = Math.max(240, Math.min(360, 150 + lines.length * lineHeight));
+    ? '<image xlink:href="data:image/jpeg;base64,' + user.pfp_b64 +
+      '" x="27" y="105" width="108" height="108" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>'
+    : '<circle cx="81" cy="159" r="54" fill="#dce9f5"/><text x="81" y="175" text-anchor="middle" font-family="Arial,sans-serif" font-size="43" font-weight="700" fill="#41627e">' + initials + '</text>';
+  const handle = username ? '@' + username : 'Telegram member';
+  const bubbleBottom = 115 + Math.max(250, 130 + lines.length * lineHeight);
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512" viewBox="0 0 512 512">
     <defs>
-      <clipPath id="avatarClip"><circle cx="81" cy="139" r="46"/></clipPath>
-      <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feGaussianBlur stdDeviation="7"/></filter>
+      <clipPath id="avatarClip"><circle cx="81" cy="159" r="54"/></clipPath>
+      <filter id="shadow" x="-25%" y="-25%" width="150%" height="160%">
+        <feGaussianBlur stdDeviation="8"/>
+      </filter>
     </defs>
-    <circle cx="81" cy="139" r="51" fill="#ffffff" opacity=".95"/>
+    <path d="M143 75 H466 Q490 75 490 99 V${bubbleBottom - 20} Q490 ${bubbleBottom} 466 ${bubbleBottom} H143 Q119 ${bubbleBottom} 119 ${bubbleBottom - 20} V99 Q119 75 143 75Z"
+      fill="#14202b" opacity=".20" transform="translate(0 9)" filter="url(#shadow)"/>
+    <path d="M143 67 H466 Q490 67 490 91 V${bubbleBottom - 20} Q490 ${bubbleBottom} 466 ${bubbleBottom} H143 Q119 ${bubbleBottom} 119 ${bubbleBottom - 20} V91 Q119 67 143 67Z"
+      fill="#ffffff" stroke="#d8e1e8" stroke-width="3"/>
+    <path d="M128 132 Q104 136 112 166 Q120 155 137 151Z" fill="#d9fdd3" stroke="#d8e1e8" stroke-width="2"/>
+    <path d="M143 70 H466 Q487 70 487 92 V166 H122 V92 Q122 70 143 70Z" fill="#d9fdd3"/>
+    <circle cx="81" cy="159" r="60" fill="#ffffff" stroke="#ffffff" stroke-width="5"/>
     ${avatar}
-    <path d="M137 86 H465 Q486 86 486 107 V${86 + bubbleHeight - 20} Q486 ${86 + bubbleHeight} 465 ${86 + bubbleHeight} H137 Q119 ${86 + bubbleHeight} 119 ${86 + bubbleHeight - 20} V107 Q119 86 137 86Z" fill="#9fdcaa" opacity=".35" transform="translate(0 7)" filter="url(#shadow)"/>
-    <path d="M137 78 H465 Q486 78 486 99 V${78 + bubbleHeight - 20} Q486 ${78 + bubbleHeight} 465 ${78 + bubbleHeight} H137 Q119 ${78 + bubbleHeight} 119 ${78 + bubbleHeight - 20} V99 Q119 78 137 78Z" fill="#d9fdd3"/>
-    <path d="M127 126 Q105 128 111 153 Q118 147 132 145Z" fill="#d9fdd3"/>
-    <text x="158" y="128" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#267b62">${xmlEscape(name)}</text>
-    <text x="158" y="153" font-family="Arial,sans-serif" font-size="14" fill="#5c8274">${xmlEscape(handle)}</text>
+    <text x="157" y="112" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#176b55">${xmlEscape(name)}</text>
+    <text x="157" y="140" font-family="Arial,sans-serif" font-size="14" fill="#55786d">${xmlEscape(handle)}</text>
+    <path d="M157 169 H452" stroke="#c3e8ca" stroke-width="2"/>
     ${quoteText}
-    <text x="450" y="${Math.min(456, 105 + bubbleHeight)}" text-anchor="end" font-family="Arial,sans-serif" font-size="13" fill="#628779">✓✓</text>
-    <text x="256" y="490" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="700" letter-spacing="2" fill="#ffffff" stroke="#263746" stroke-width="2" paint-order="stroke">PIKO QUOTE</text>
+    <text x="405" y="${Math.min(449, bubbleBottom - 18)}" font-family="Arial,sans-serif" font-size="12" fill="#6d8c80">now</text>
+    <text x="475" y="${Math.min(449, bubbleBottom - 18)}" text-anchor="end" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#339b81">✓✓</text>
+    <text x="256" y="493" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="2" fill="#ffffff" stroke="#253746" stroke-width="2.5" paint-order="stroke">PIKO • QUOTE</text>
   </svg>`;
 }
 
@@ -112,9 +123,21 @@ export async function sendQuoteSticker(env, chatId, spec, rest = {}, packOwnerId
   try {
     const user = { ...(spec.user || {}) };
     if (!user.pfp_b64 && user.fetch_pfp_id) user.pfp_b64 = await getPfpB64(env, user.fetch_pfp_id) || '';
-    const svg = quoteStickerSvg({ ...spec, user });
     await ensureResvg();
-    const rendered = new Resvg(svg, { fitTo: { mode: 'width', value: 512 } }).render();
+    // Render once with the real avatar. If Telegram returns an image format
+    // Resvg cannot decode, retry with a generated initials avatar so the
+    // sticker itself is never an empty/transparent square.
+    let svg = quoteStickerSvg({ ...spec, user });
+    let rendered;
+    try {
+      rendered = new Resvg(svg, { fitTo: { mode: 'width', value: 512 } }).render();
+    } catch (avatarError) {
+      if (!user.pfp_b64) throw avatarError;
+      console.warn('Piko quote avatar could not be rendered; using initials fallback:', avatarError?.message || String(avatarError));
+      user.pfp_b64 = '';
+      svg = quoteStickerSvg({ ...spec, user });
+      rendered = new Resvg(svg, { fitTo: { mode: 'width', value: 512 } }).render();
+    }
     const png = new Blob([rendered.asPng()], { type: 'image/png' });
     if (png.size > 512 * 1024) throw new Error('Sticker PNG exceeds Telegram 512 KB limit');
 
