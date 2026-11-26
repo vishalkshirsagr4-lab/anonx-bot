@@ -318,6 +318,20 @@ def help_keyboard() -> InlineKeyboardMarkup:
 
 BACK_BTN = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data="help")]])
 
+# ── Exact sticker file_ids (paste your own) ──
+STICKER_START = ""
+STICKER_WELCOME = ""
+STICKER_HELP = ""
+
+async def send_sticker_then_buttons(msg, sticker_id, text, markup=None):
+    """Send an exact sticker, then the text+buttons. Sticker failures never block the text message."""
+    if sticker_id:
+        try:
+            await msg.reply_sticker(sticker_id)
+        except Exception as e:
+            print(f"sticker send failed: {e}")
+    return await msg.reply(text, reply_markup=markup)
+
 # ─── PYROGRAM CLIENT ─────────────────────────────────────────────
 app = Client(
     "uraraka_bot",
@@ -351,7 +365,9 @@ async def cmd_start(_, msg: Message):
             "📖 ᴛᴀᴩ **ʜᴇʟᴩ & ᴄᴏᴍᴍᴀɴᴅꜱ** ʙᴇʟᴏᴡ ᴛᴏ ꜱᴇᴇ ᴇᴠᴇʀʏᴛʜɪɴɢ.\n"
             "🛡️ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴩ + ᴍᴀᴋᴇ ᴍᴇ ᴀᴅᴍɪɴ ꜰᴏʀ ᴍᴏᴅᴇʀᴀᴛɪᴏɴ."
         )
-        await msg.reply(text, reply_markup=start_keyboard(me.username))
+        await send_sticker_then_buttons(
+            msg, STICKER_START, text, start_keyboard(me.username)
+        )
     except Exception:
         traceback.print_exc()
         await msg.reply("❌ Error hua, dobara try karo!")
@@ -360,9 +376,10 @@ async def cmd_start(_, msg: Message):
 @app.on_message(filters.command("help"))
 async def cmd_help(_, msg: Message):
     try:
-        await msg.reply(
-            f"📖 **{ff('Help & Commands')}**\n\n{ff('Pick a category below')} 👇",
-            reply_markup=help_keyboard()
+        await send_sticker_then_buttons(
+            msg, STICKER_HELP,
+            f"📖 **{ff('Help & Commands')}**\n\n{ff('Pick a category')} 👇",
+            help_keyboard()
         )
     except Exception:
         traceback.print_exc()
@@ -913,7 +930,7 @@ async def on_new_member(_, msg: Message):
                 "{username}", f"@{member.username}" if member.username else member.first_name
             )
             wtext = wtext.replace("{chatname}", msg.chat.title or "this group")
-            await msg.reply(wtext)
+            await send_sticker_then_buttons(msg, STICKER_WELCOME, wtext)
     except Exception:
         traceback.print_exc()
 
