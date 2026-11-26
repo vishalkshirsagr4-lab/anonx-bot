@@ -41,39 +41,58 @@ function quoteStickerSvg(spec) {
   const name = String(user.name || 'Telegram member').replace(/\\s+/g, ' ').trim().slice(0, 25);
   const username = String(user.username || '').replace(/^@/, '').slice(0, 24);
   const quote = String(spec.subtitle || '').replace(/\\s+/g, ' ').trim().slice(0, 420);
-  // Keep the design inside the sticker canvas and use only basic SVG primitives.
-  // This avoids SVG image embedding, clipping, gradients and CSS that can render
-  // inconsistently in edge WASM rasterizers.
   const lines = wrapStickerQuote(quote || ' ', 27, 5);
   const fontSize = lines.length > 4 ? 19 : lines.length > 2 ? 21 : 23;
   const lineHeight = fontSize + 10;
   const quoteText = lines.map((line, i) =>
-    '<text x="166" y="' + (268 + i * lineHeight) +
+    '<text x="165" y="' + (273 + i * lineHeight) +
     '" font-family="Arial,sans-serif" font-size="' + fontSize +
-    '" font-weight="600" fill="#17324d">' + xmlEscape(line) + '</text>'
+    '" font-weight="600" fill="#172b4d">' + xmlEscape(line) + '</text>'
   ).join('');
+
   const initials = xmlEscape((name || 'T').trim().charAt(0).toUpperCase());
+  const cleanAvatar = String(user.pfp_b64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
+  // Telegram profile photos are normally JPEG. Accept PNG too; use initials
+  // for unsupported formats rather than risking a failed SVG rasterization.
+  const avatarMime = cleanAvatar.startsWith('/9j/') ? 'image/jpeg'
+    : cleanAvatar.startsWith('iVBORw0KGgo') ? 'image/png' : '';
+  const avatar = avatarMime
+    ? '<image href="data:' + avatarMime + ';base64,' + cleanAvatar +
+      '" x="35" y="72" width="112" height="112" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>'
+    : '';
   const handle = username ? '@' + username : 'Telegram member';
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-    <rect x="0" y="0" width="512" height="512" fill="#d9efff"/>
-    <rect x="24" y="24" width="464" height="464" rx="30" fill="#ffffff"/>
-    <rect x="24" y="24" width="464" height="12" fill="#168fc2"/>
-    <circle cx="93" cy="121" r="48" fill="#dceeff" stroke="#258db8" stroke-width="4"/>
-    <text x="93" y="137" text-anchor="middle" font-family="Arial,sans-serif" font-size="42" font-weight="700" fill="#23618b">${initials}</text>
-    <text x="158" y="105" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#1687b8">TELEGRAM MESSAGE</text>
-    <text x="158" y="137" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#17324d">${xmlEscape(name)}</text>
-    <text x="158" y="162" font-family="Arial,sans-serif" font-size="14" fill="#66839b">${xmlEscape(handle)}</text>
-    <rect x="48" y="195" width="416" height="238" rx="22" fill="#e7f4ff" stroke="#9bcce9" stroke-width="2"/>
-    <text x="76" y="232" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#258db8">QUOTED MESSAGE</text>
+    <defs>
+      <linearGradient id="back" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#dff4ff"/><stop offset="1" stop-color="#b9e2ff"/>
+      </linearGradient>
+      <clipPath id="avatarClip"><circle cx="91" cy="128" r="56"/></clipPath>
+    </defs>
+    <rect width="512" height="512" fill="url(#back)"/>
+    <circle cx="468" cy="44" r="92" fill="#ffffff" opacity=".35"/>
+    <circle cx="22" cy="490" r="90" fill="#69c4ec" opacity=".2"/>
+    <rect x="91" y="37" width="397" height="432" rx="30" fill="#528db3" opacity=".16"/>
+    <rect x="83" y="29" width="397" height="432" rx="30" fill="#ffffff" stroke="#c4e3f5" stroke-width="2"/>
+    <rect x="83" y="29" width="397" height="10" rx="5" fill="#168fc2"/>
+    <circle cx="91" cy="128" r="62" fill="#ffffff" stroke="#ffffff" stroke-width="5"/>
+    <circle cx="91" cy="128" r="56" fill="#dceeff" stroke="#258db8" stroke-width="3"/>
+    <text x="91" y="143" text-anchor="middle" font-family="Arial,sans-serif" font-size="42" font-weight="700" fill="#23618b">${initials}</text>
+    ${avatar}
+    <text x="169" y="79" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="1.4" fill="#1687b8">TELEGRAM MESSAGE</text>
+    <text x="169" y="112" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#172b4d">${xmlEscape(name)}</text>
+    <text x="169" y="139" font-family="Arial,sans-serif" font-size="14" fill="#66839b">${xmlEscape(handle)}</text>
+    <rect x="111" y="190" width="342" height="225" rx="24" fill="#e8f5ff" stroke="#b8dcef" stroke-width="2"/>
+    <path d="M111 214 L94 228 L111 240 Z" fill="#e8f5ff"/>
+    <text x="139" y="231" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="1.2" fill="#258db8">QUOTED MESSAGE</text>
     ${quoteText}
-    <path d="M76 390 H436" stroke="#c7dfef" stroke-width="2"/>
-    <text x="76" y="416" font-family="Arial,sans-serif" font-size="13" font-weight="600" fill="#54758d">via Piko</text>
-    <text x="436" y="416" text-anchor="end" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#168fc2">✓✓</text>
-    <rect x="174" y="452" width="164" height="25" rx="12" fill="#168fc2"/>
-    <text x="256" y="469" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#ffffff">PIKO QUOTE</text>
+    <path d="M139 370 H425" stroke="#c7dfef" stroke-width="1.5"/>
+    <text x="139" y="397" font-family="Arial,sans-serif" font-size="13" font-weight="600" fill="#66839b">via Piko</text>
+    <text x="425" y="397" text-anchor="end" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#168fc2">✓✓</text>
+    <rect x="174" y="478" width="164" height="24" rx="12" fill="#168fc2"/>
+    <text x="256" y="495" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1" fill="#ffffff">PIKO QUOTE</text>
   </svg>`;
 }
-
 function isValidStickerPng(bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.length < 100) return false;
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
