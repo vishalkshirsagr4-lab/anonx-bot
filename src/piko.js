@@ -50,7 +50,76 @@ async function profile(env, user) {
   ]);
   return results[2].rows[0] || {credits:30,coins:0};
 }
-async function reply(env, chatId, text, extra={}) { return tg(env,'sendMessage',{chat_id:chatId,text,parse_mode:'HTML',...extra}); }
+const STICKER_CATEGORIES = ['welcome','start','help','success','error','contest','wallet','game','test','general'];
+function stickerCategory(text) {
+  const value = String(text || '').replace(/<[^>]*>/g, ' ').toLowerCase();
+  if (/welcome|new member|glad you are here/.test(value)) return 'welcome';
+  if (/help|commands|guide/.test(value)) return 'help';
+  if (/contest|winner|submission|participate/.test(value)) return 'contest';
+  if (/wallet|coins|credits|balance|reward|claimed/.test(value)) return 'wallet';
+  if (/game|quiz|trivia|correct|guess/.test(value)) return 'game';
+  if (/success|complete|saved|joined|posted|sent|enabled|turned on|unblocked/.test(value)) return 'success';
+  if (/error|failed|cannot|could not|not found|denied|owner only|invalid|unavailable/.test(value)) return 'error';
+  return null;
+}
+export async function sendPikoSticker(env, chatId, category='general') {
+  try {
+    const key = await kvGet(env, 'piko_sticker:' + category);
+    if (!key || typeof key !== 'string') return false;
+    const result = await tg(env, 'sendSticker', { chat_id: chatId, sticker: key });
+    if (result?.ok) return true;
+    console.error('Piko sticker send failed:', category, result?.description || 'Telegram error');
+  } catch (error) {
+    console.error('Piko sticker lookup failed:', category, error?.message || String(error));
+  }
+  return false;
+}
+async function reply(env, chatId, text, extra={}) {
+  const category = Object.prototype.hasOwnProperty.call(extra, 'stickerCategory') ? extra.stickerCategory : stickerCategory(text);
+  const options = { ...extra };
+  delete options.stickerCategory;
+  if (category) await sendPikoSticker(env, chatId, category);
+  return tg(env,'sendMessage',{chat_id:chatId,text,parse_mode:'HTML',...options});
+}
+async function stickerAdminCommand(env, msg, cmd) {
+  if (!isOwner(msg.from.id)) { await reply(env, msg.chat.id, '⛔ Owner only.', { stickerCategory: null }); return true; }
+  if (msg.chat.type !== 'private') { await reply(env, msg.chat.id, 'Configure stickers in Piko private chat.', { stickerCategory: null }); return true; }
+  if (cmd.name === 'setsticker') {
+    const category = String(cmd.arg || '').trim().toLowerCase();
+    if (!STICKER_CATEGORIES.includes(category)) {
+      await reply(env, msg.chat.id, 'Reply to a sticker with /setsticker category. Categories: ' + STICKER_CATEGORIES.join(', '), { stickerCategory: null });
+      return true;
+    }
+    const sticker = msg.reply_to_message?.sticker;
+    if (!sticker?.file_id) {
+      await reply(env, msg.chat.id, 'Reply directly to the sticker you want to save, then send /setsticker ' + category + '.', { stickerCategory: null });
+      return true;
+    }
+    await kvPut(env, 'piko_sticker:' + category, sticker.file_id);
+    await reply(env, msg.chat.id, 'Saved the ' + category + ' sticker. Preview it with /teststicker ' + category + '.', { stickerCategory: null });
+    return true;
+  }
+  if (cmd.name === 'removesticker') {
+    const category = String(cmd.arg || '').trim().toLowerCase();
+    if (!STICKER_CATEGORIES.includes(category)) { await reply(env, msg.chat.id, 'Usage: /removesticker category. Categories: ' + STICKER_CATEGORIES.join(', '), { stickerCategory: null }); return true; }
+    await kvDel(env, 'piko_sticker:' + category);
+    await reply(env, msg.chat.id, 'Removed the ' + category + ' sticker. Existing text and buttons are unchanged.', { stickerCategory: null });
+    return true;
+  }
+  if (cmd.name === 'stickers') {
+    const rows = await Promise.all(STICKER_CATEGORIES.map(async category => [category, await kvGet(env, 'piko_sticker:' + category)]));
+    await reply(env, msg.chat.id, '<b>Piko sticker packs</b>\\n' + rows.map(([name, id]) => (id ? '✅ ' : '▫️ ') + name).join('\\n') + '\\n\\nSet: reply to a sticker with /setsticker category\\nRemove: /removesticker category\\nPreview: /teststicker [category]', { stickerCategory: null });
+    return true;
+  }
+  if (cmd.name === 'teststicker') {
+    const category = String(cmd.arg || 'general').trim().toLowerCase();
+    if (!STICKER_CATEGORIES.includes(category)) { await reply(env, msg.chat.id, 'Unknown category. Use /stickers to see categories.', { stickerCategory: null }); return true; }
+    const sent = await sendPikoSticker(env, msg.chat.id, category);
+    await reply(env, msg.chat.id, sent ? 'Sticker preview: ' + category : 'No sticker saved for ' + category + '. Reply to a sticker with /setsticker ' + category + '.', { stickerCategory: null });
+    return true;
+  }
+  return false;
+}
 async function ownerOnly(env, msg) { if (!isOwner(msg.from.id)) { await reply(env,msg.chat.id,'⛔ Owner only.'); return false; } return true; }
 async function banned(env,id) { const r=await q(env,'SELECT 1 FROM piko_bans WHERE user_id=?',[id]); return r.rows.length>0; }
 
@@ -763,9 +832,10 @@ async function replyByMessageLink(env, msg, cmd) {
     { reply_to_message_id: msg.message_id });
 }
 
-const PIKO_COMMANDS=new Set(['pikomemory','forgetme','reply','q','sethug','setkiss','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','convert','img','ship','roll','hug','kiss','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
+const PIKO_COMMANDS=new Set(['pikomemory','forgetme','reply','q','setsticker','stickers','removesticker','teststicker','sethug','setkiss','setwave','sethighfive','setcheer','setkick','setpunch','setslap','credits','wallet','daily','work','crime','rob','pay','convert','img','ship','roll','hug','kiss','slap','punch','kick','wave','highfive','cheer','welcome','setwelcome','delwelcome','save','stop','filters','ban','unban','whisper','admin','stats','addcredits','addcoins','gban','ungban']);
 export async function handlePikoDM(msg,env,cmd){
   await ensureSchema(env);
+  if (cmd && ['setsticker','stickers','removesticker','teststicker'].includes(cmd.name)) return stickerAdminCommand(env,msg,cmd);
   if(await handleFunMediaSetup(env,msg,cmd))return true;
   if(cmd&&cmd.name.startsWith('set')&&FUN_MEDIA_COMMANDS.includes(cmd.name.slice(3)))return setFunMedia(env,msg,cmd);
   if(await banned(env,msg.from.id))return true;
@@ -837,6 +907,7 @@ function memberWelcomeCaption(member, chat, configuredText) {
 
 async function sendMemberWelcome(env, msg, member, welcomeText) {
   const caption = memberWelcomeCaption(member, msg.chat, welcomeText);
+  await sendPikoSticker(env, msg.chat.id, 'welcome');
   const order = Math.random() < 0.5
     ? MEMBER_WELCOME_VIDEOS
     : [MEMBER_WELCOME_VIDEOS[1], MEMBER_WELCOME_VIDEOS[0]];
