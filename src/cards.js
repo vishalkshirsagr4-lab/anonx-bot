@@ -2,7 +2,7 @@
 import { state, CFG } from './config.js';
 import { tg, tgForm } from './telegram.js';
 import { kvGet, kvPut, kvDel } from './db.js';
-import { sleep, getPfpB64 } from './helpers.js';
+import { sleep, getPfpB64, getBotInfo } from './helpers.js';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm';
 
@@ -17,7 +17,7 @@ function xmlEscape(value) {
 }
 
 function wrapStickerQuote(value, maxChars = 37, maxLines = 10) {
-  const words = String(value || '').replace(/\\s+/g, ' ').trim().split(' ');
+  const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ');
   const lines = [];
   let line = '';
   for (const word of words) {
@@ -39,7 +39,7 @@ function quoteStickerSvg(spec) {
   const user = spec.user || {};
   const name = String(user.name || 'Telegram member').slice(0, 70);
   const username = String(user.username || '').replace(/^@/, '').slice(0, 40);
-  const quote = String(spec.subtitle || '').trim().slice(0, 420);
+  const quote = String(spec.subtitle || '').replace(/\s+/g, ' ').trim().slice(0, 420);
   const lines = wrapStickerQuote(quote);
   const fontSize = lines.length > 8 ? 18 : lines.length > 6 ? 20 : 23;
   const lineHeight = fontSize + 7;
@@ -71,7 +71,45 @@ function quoteStickerSvg(spec) {
   </svg>`;
 }
 
-export async function sendQuoteSticker(env, chatId, spec, rest = {}) {
+function stickerPackName(userId, botUsername) {
+  const username = String(botUsername || '').replace(/[^a-zA-Z0-9_]/g, '');
+  if (!username) throw new Error('Could not identify the bot username for the sticker pack');
+  return `pikoq${String(userId).replace(/\D/g, '')}_by_${username}`.slice(0, 64);
+}
+
+async function addQuoteToUserPack(env, userId, botUsername, displayName, png) {
+  const name = stickerPackName(userId, botUsername);
+  const title = (String(displayName || 'Piko user').trim().slice(0, 42) + ' • Piko Quotes').slice(0, 64);
+  const stickerSpec = [{ sticker: 'attach://sticker', format: 'static', emoji_list: ['💬'] }];
+  const existing = await tg(env, 'getStickerSet', { name });
+  if (existing?.ok) {
+    const added = await tgForm(env, 'addStickerToSet', {
+      user_id: userId, name, sticker: JSON.stringify({ ...stickerSpec[0], sticker: 'attach://file' })
+    }, 'file', png, 'piko-quote.png');
+    if (!added?.ok) throw new Error(added?.description || 'Could not add the quote to your sticker pack');
+    const refreshed = await tg(env, 'getStickerSet', { name });
+    const latest = refreshed?.ok ? refreshed.result.stickers?.at(-1) : null;
+    if (!latest?.file_id) throw new Error('Sticker was added, but Telegram did not return its sticker file ID');
+    return { name, title, fileId: latest.file_id };
+  }
+
+  const created = await tgForm(env, 'createNewStickerSet', {
+    user_id: userId, name, title, stickers: JSON.stringify(stickerSpec)
+  }, 'sticker', png, 'piko-quote.png');
+  if (!created?.ok) {
+    // Another request may have created this user's pack between the lookup and create.
+    const retry = await tgForm(env, 'addStickerToSet', {
+      user_id: userId, name, sticker: JSON.stringify({ ...stickerSpec[0], sticker: 'attach://file' })
+    }, 'file', png, 'piko-quote.png');
+    if (!retry?.ok) throw new Error(created?.description || retry?.description || 'Could not create the user sticker pack');
+  }
+  const refreshed = await tg(env, 'getStickerSet', { name });
+  const latest = refreshed?.ok ? refreshed.result.stickers?.at(-1) : null;
+  if (!latest?.file_id) throw new Error('Sticker pack was created, but Telegram did not return its sticker file ID');
+  return { name, title, fileId: latest.file_id };
+}
+
+export async function sendQuoteSticker(env, chatId, spec, rest = {}, packOwnerId) {
   try {
     const user = { ...(spec.user || {}) };
     if (!user.pfp_b64 && user.fetch_pfp_id) user.pfp_b64 = await getPfpB64(env, user.fetch_pfp_id) || '';
@@ -80,16 +118,24 @@ export async function sendQuoteSticker(env, chatId, spec, rest = {}) {
     const rendered = new Resvg(svg, { fitTo: { mode: 'width', value: 512 } }).render();
     const png = new Blob([rendered.asPng()], { type: 'image/png' });
     if (png.size > 512 * 1024) throw new Error('Sticker PNG exceeds Telegram 512 KB limit');
-    const result = await tgForm(env, 'sendSticker', {
+
+    const ownerId = Number(packOwnerId || spec.pack_owner_id);
+    if (!Number.isSafeInteger(ownerId) || ownerId <= 0) throw new Error('Could not identify the user who requested this sticker');
+    const botInfo = await getBotInfo(env);
+    if (!botInfo?.username) throw new Error('Could not identify the bot username');
+    const pack = await addQuoteToUserPack(env, ownerId, botInfo.username, user.name, png);
+
+    const sent = await tg(env, 'sendSticker', {
       chat_id: chatId,
-      sticker_format: 'static',
+      sticker: pack.fileId,
       emoji: '💬',
+      reply_markup: { inline_keyboard: [[{ text: '📦 Open my quote sticker pack', url: 'https://t.me/addstickers/' + pack.name }]] },
       ...rest
-    }, 'sticker', png, 'piko-quote.png');
-    if (!result?.ok) console.error('Piko quote sticker delivery failed:', result?.description || 'unknown Telegram error');
-    return result;
+    });
+    if (!sent?.ok) throw new Error(sent?.description || 'Sticker was added to your pack, but could not be sent to the chat');
+    return { ...sent, sticker_pack_name: pack.name, sticker_pack_title: pack.title };
   } catch (error) {
-    console.error('Piko quote sticker generation failed:', error?.message || String(error));
+    console.error('Piko quote sticker generation/pack failed:', error?.message || String(error));
     return { ok: false, description: error?.message || 'Sticker generation failed' };
   }
 }
