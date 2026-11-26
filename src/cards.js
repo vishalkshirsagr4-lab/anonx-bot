@@ -84,8 +84,8 @@ async function addQuoteToUserPack(env, userId, botUsername, displayName, png) {
   const existing = await tg(env, 'getStickerSet', { name });
   if (existing?.ok) {
     const added = await tgForm(env, 'addStickerToSet', {
-      user_id: userId, name, sticker: JSON.stringify(stickerSpec[0])
-    }, 'sticker', png, 'piko-quote.png');
+      user_id: userId, name, sticker: JSON.stringify({ ...stickerSpec[0], sticker: 'attach://file' })
+    }, 'file', png, 'piko-quote.png');
     if (!added?.ok) throw new Error(added?.description || 'Could not add the quote to your sticker pack');
     return { name, title };
   }
