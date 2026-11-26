@@ -28,7 +28,7 @@ export function getHelp() {
     },
     piko: {
       title: '🤖 Piko AI & Fun',
-      cmds: `<b>🤖 Piko Features</b>\n\nSend a DM to chat with Piko AI. Send a voice message for transcription.\n/credits — Credits and coins\n/img <code>prompt</code> — Generate an image (5 credits)\n/daily, /work, /crime, /rob, /pay — Economy\n/ship, /roll, /trivia, /hug, /slap, /punch, /kick — Fun commands\nGroup admins: /welcome, /setwelcome, /delwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban`,
+      cmds: `<b>🤖 Piko Features</b>\n\nSend a DM to chat with Piko AI. Send a voice message for transcription.\n/credits — Credits and coins\n/img <code>prompt</code> — Generate an image (5 credits)\n/q make — reply to a message to create a quote card with the sender’s profile photo\n/q make <code>your text</code> — create a quote card with your own profile photo\n/daily, /work, /crime, /rob, /pay — Economy\n/ship, /roll, /trivia, /hug, /slap, /punch, /kick — Fun commands\nGroup admins: /welcome, /setwelcome, /delwelcome, /save, /stop, /filters, /ban, /unban\nOwner: /admin, /stats, /addcredits, /addcoins, /gban, /ungban`,
       rules: `<b>Notes</b>\n\nAI and voice features require GROQ_API_KEY. Image generation costs 5 credits. Group moderation commands require admin permissions.`
     },
     owner: {
