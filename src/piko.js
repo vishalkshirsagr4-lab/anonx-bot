@@ -3,7 +3,7 @@
 import { state, isOwner } from './config.js';
 import { q, batch, kvGet, kvPut, kvDel } from './db.js';
 import { tg, tgForm } from './telegram.js';
-import { sendCard } from './cards.js';
+import { sendQuoteSticker } from './cards.js';
 import { sendAnonMessage } from './anon.js';
 import { getBotInfo } from './helpers.js';
 
@@ -349,12 +349,12 @@ async function quoteMaker(env, msg, cmd) {
     cache: false
   };
 
-  const result = await sendCard(env, msg.chat.id, spec,
-    '✨ <b>Quote card created</b> · Made with Piko',
-    { reply_to_message_id: msg.message_id });
+  const result = await sendQuoteSticker(env, msg.chat.id, spec, {
+    reply_to_message_id: msg.message_id
+  });
   if (!result?.ok) {
     return reply(env, msg.chat.id,
-      '⚠️ Quote image service is unavailable right now. Please try again later. No credits were charged.',
+      '⚠️ I could not create the Telegram sticker right now. Please try again shortly. No credits were charged.',
       { reply_to_message_id: msg.message_id });
   }
   return result;
