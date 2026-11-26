@@ -164,12 +164,15 @@ export async function sendQuoteSticker(env, chatId, spec, rest = {}, packOwnerId
     if (!botInfo?.username) throw new Error('Could not identify the bot username');
     const pack = await addQuoteToUserPack(env, ownerId, botInfo.username, user.name, png);
 
-    const sent = await tg(env, 'sendSticker', {
-      chat_id: chatId, sticker: pack.fileId, emoji: '💬',
+    // Upload the exact rendered PNG for delivery instead of reusing a sticker
+    // file_id returned by getStickerSet. This avoids accidentally selecting a
+    // stale/incorrect pack item while still saving the same PNG in the user's pack.
+    const sent = await tgForm(env, 'sendSticker', {
+      chat_id: chatId, emoji: '💬',
       reply_markup: { inline_keyboard: [[{ text: '📦 Open quote sticker pack', url: 'https://t.me/addstickers/' + pack.name }]] },
       ...rest
-    });
-    if (!sent?.ok) throw new Error(sent?.description || 'Sticker was saved, but Telegram could not send it');
+    }, 'sticker', png, 'piko-quote.png');
+    if (!sent?.ok) throw new Error(sent?.description || 'Sticker was saved, but Telegram could not send the generated PNG');
     return { ...sent, sticker_pack_name: pack.name, sticker_pack_title: pack.title };
   } catch (error) {
     const message = error?.message || String(error);
