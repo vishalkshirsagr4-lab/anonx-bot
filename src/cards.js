@@ -96,8 +96,8 @@ async function addQuoteToUserPack(env, userId, botUsername, displayName, png) {
   if (!created?.ok) {
     // Another request may have created this user's pack between the lookup and create.
     const retry = await tgForm(env, 'addStickerToSet', {
-      user_id: userId, name, sticker: JSON.stringify(stickerSpec[0])
-    }, 'sticker', png, 'piko-quote.png');
+      user_id: userId, name, sticker: JSON.stringify({ ...stickerSpec[0], sticker: 'attach://file' })
+    }, 'file', png, 'piko-quote.png');
     if (!retry?.ok) throw new Error(created?.description || retry?.description || 'Could not create the user sticker pack');
   }
   return { name, title };
@@ -120,7 +120,9 @@ export async function sendQuoteSticker(env, chatId, spec, rest = {}, packOwnerId
     const pack = await addQuoteToUserPack(env, ownerId, botInfo.username, user.name, png);
 
     const sent = await tgForm(env, 'sendSticker', {
-      chat_id: chatId, sticker_format: 'static', emoji: '💬', ...rest
+      chat_id: chatId, sticker_format: 'static', emoji: '💬',
+      reply_markup: { inline_keyboard: [[{ text: '📦 Open my quote sticker pack', url: 'https://t.me/addstickers/' + pack.name }]] },
+      ...rest
     }, 'sticker', png, 'piko-quote.png');
     if (!sent?.ok) throw new Error(sent?.description || 'Sticker was added to your pack, but could not be sent to the chat');
     return { ...sent, sticker_pack_name: pack.name, sticker_pack_title: pack.title };
