@@ -123,9 +123,21 @@ export async function sendQuoteSticker(env, chatId, spec, rest = {}, packOwnerId
   try {
     const user = { ...(spec.user || {}) };
     if (!user.pfp_b64 && user.fetch_pfp_id) user.pfp_b64 = await getPfpB64(env, user.fetch_pfp_id) || '';
-    const svg = quoteStickerSvg({ ...spec, user });
     await ensureResvg();
-    const rendered = new Resvg(svg, { fitTo: { mode: 'width', value: 512 } }).render();
+    // Render once with the real avatar. If Telegram returns an image format
+    // Resvg cannot decode, retry with a generated initials avatar so the
+    // sticker itself is never an empty/transparent square.
+    let svg = quoteStickerSvg({ ...spec, user });
+    let rendered;
+    try {
+      rendered = new Resvg(svg, { fitTo: { mode: 'width', value: 512 } }).render();
+    } catch (avatarError) {
+      if (!user.pfp_b64) throw avatarError;
+      console.warn('Piko quote avatar could not be rendered; using initials fallback:', avatarError?.message || String(avatarError));
+      user.pfp_b64 = '';
+      svg = quoteStickerSvg({ ...spec, user });
+      rendered = new Resvg(svg, { fitTo: { mode: 'width', value: 512 } }).render();
+    }
     const png = new Blob([rendered.asPng()], { type: 'image/png' });
     if (png.size > 512 * 1024) throw new Error('Sticker PNG exceeds Telegram 512 KB limit');
 
