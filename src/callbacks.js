@@ -187,12 +187,8 @@ export async function handleCallback(cq, env) {
 
     // ─── Group help ───
     if (data === 'group_help') {
-      const bi = await getBotInfo(env);
-
-      return tg(env, 'answerCallbackQuery', {
-        callback_query_id: cq.id,
-        text: '📚 Open the bot in DM for full help.',
-        url: `https://t.me/${bi.username}?start=help`
+      return editCq(env, cq, '📚 <b>Group Help</b>\n\nUse /help to view the available commands and group tools.', {
+        inline_keyboard: [[{ text: '🔙 Back', callback_data: 'back_start' }]]
       });
     }
 
