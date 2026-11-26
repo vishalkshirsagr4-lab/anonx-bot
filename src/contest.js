@@ -2,6 +2,7 @@
 import { CFG, rankLabel } from './config.js';
 import { q } from './db.js';
 import { tg } from './telegram.js';
+import { STICKERS } from './stickers.js';
 import { send } from './cards.js';
 import { esc, fmtDur, fmtTime, getBotInfo } from './helpers.js';
 import { sendSubmissionEntry } from './media.js';
@@ -322,6 +323,20 @@ export async function startRun(env, chatId, st, now) {
         }
       ]]
     };
+
+    if (typeof STICKERS.contest_open === 'string' && STICKERS.contest_open.trim()) {
+      try {
+        const stickerResult = await tg(env, 'sendSticker', {
+          chat_id: chatId,
+          sticker: STICKERS.contest_open
+        });
+        if (!stickerResult?.ok) {
+          console.error('Contest sticker send failed:', stickerResult?.description || 'Telegram send failed');
+        }
+      } catch (error) {
+        console.error('Contest sticker send failed:', error);
+      }
+    }
 
     let sent = null;
 
