@@ -58,7 +58,7 @@ function quoteStickerSvg(spec) {
   const handle = username ? '@' + username : 'Telegram member';
   const bubbleHeight = Math.max(196, 100 + lines.length * lineHeight);
   const footerY = Math.min(455, 271 + bubbleHeight);
-  return \`<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
     <defs>
       <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9f5ff"/><stop offset="1" stop-color="#c9e6ff"/></linearGradient>
       <linearGradient id="bubble" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f3f9ff"/></linearGradient>
@@ -72,20 +72,20 @@ function quoteStickerSvg(spec) {
     <rect x="91" y="48" width="390" height="9" rx="4" fill="#28a8e0"/>
     <circle cx="81" cy="225" r="65" fill="#ffffff" stroke="#ffffff" stroke-width="5"/>
     <circle cx="81" cy="225" r="60" fill="#dceeff" stroke="#2a9ed2" stroke-width="3"/>
-    \${avatar}
+    ${avatar}
     <text x="155" y="91" font-family="DejaVu Sans,Arial,sans-serif" font-size="13" font-weight="700" letter-spacing="1.7" fill="#1687b8">TELEGRAM MESSAGE</text>
-    <text x="155" y="129" font-family="DejaVu Sans,Arial,sans-serif" font-size="22" font-weight="700" fill="#17324d">\${xmlEscape(name)}</text>
-    <text x="155" y="154" font-family="DejaVu Sans,Arial,sans-serif" font-size="14" fill="#66839b">\${xmlEscape(handle)}</text>
-    <rect x="119" y="177" width="334" height="\${bubbleHeight}" rx="23" fill="#e7f4ff" stroke="#c5e2f5" stroke-width="1.5"/>
+    <text x="155" y="129" font-family="DejaVu Sans,Arial,sans-serif" font-size="22" font-weight="700" fill="#17324d">${xmlEscape(name)}</text>
+    <text x="155" y="154" font-family="DejaVu Sans,Arial,sans-serif" font-size="14" fill="#66839b">${xmlEscape(handle)}</text>
+    <rect x="119" y="177" width="334" height="${bubbleHeight}" rx="23" fill="#e7f4ff" stroke="#c5e2f5" stroke-width="1.5"/>
     <path d="M119 201 L102 215 L119 225 Z" fill="#e7f4ff"/>
     <text x="145" y="218" font-family="DejaVu Sans,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="1.3" fill="#258db8">QUOTED MESSAGE</text>
-    \${quoteText}
-    <path d="M145 \${footerY - 24} H425" stroke="#c7dfef" stroke-width="1.5"/>
-    <text x="145" y="\${footerY}" font-family="DejaVu Sans,Arial,sans-serif" font-size="12" font-weight="600" fill="#7894a8">via Piko</text>
-    <text x="426" y="\${footerY}" text-anchor="end" font-family="DejaVu Sans,Arial,sans-serif" font-size="17" font-weight="700" fill="#28a8e0">✓✓</text>
+    ${quoteText}
+    <path d="M145 ${footerY - 24} H425" stroke="#c7dfef" stroke-width="1.5"/>
+    <text x="145" y="${footerY}" font-family="DejaVu Sans,Arial,sans-serif" font-size="12" font-weight="600" fill="#7894a8">via Piko</text>
+    <text x="426" y="${footerY}" text-anchor="end" font-family="DejaVu Sans,Arial,sans-serif" font-size="17" font-weight="700" fill="#28a8e0">✓✓</text>
     <rect x="175" y="473" width="162" height="25" rx="12" fill="#168fc2"/>
     <text x="256" y="490" text-anchor="middle" font-family="DejaVu Sans,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.5" fill="#ffffff">PIKO QUOTE</text>
-  </svg>\`;
+  </svg>`;
 }
 
 function isValidStickerPng(bytes) {
