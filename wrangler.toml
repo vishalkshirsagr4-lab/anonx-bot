@@ -18,3 +18,8 @@ crons = ["* * * * *"]
 
 [ai]
 binding = "AI"
+
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = true
