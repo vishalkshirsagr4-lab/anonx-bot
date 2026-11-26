@@ -12,6 +12,30 @@ Piko runs on Cloudflare Workers with Turso (libSQL) storage. Existing anonymous 
 - Admin group moderation: `/ban`, `/unban`
 - Owner tools: `/admin`, `/stats`, `/addcredits`, `/addcoins`, `/gban`, `/ungban`
 
+## Stickers
+
+Telegram sticker messages cannot carry an inline keyboard. Piko therefore sends greeting flows as two messages in order: (1) the exact sticker, then (2) the text with its inline keyboard buttons.
+
+### Get a sticker file_id
+
+- Use @RawDataBot or @JsonDumpBot: forward the sticker and copy `message.sticker.file_id` from the returned data.
+- Or temporarily add this Pyrogram handler:
+
+  ```python
+  @app.on_message(filters.sticker)
+  async def _log(_, m): print(m.sticker.file_id)
+  ```
+
+  Send the sticker to your bot and copy the printed ID.
+- Or, in the Worker webhook, temporarily log `message.sticker.file_id` from the incoming update payload.
+
+### Where to paste file_ids
+
+- Worker: paste IDs into the named fields in `src/stickers.js` (`STICKERS` object).
+- Pyrogram: paste IDs into `STICKER_START`, `STICKER_WELCOME`, and `STICKER_HELP` in `baka.py`.
+
+**Important:** Telegram file_ids are bot-specific. Obtain each file_id using YOUR bot; an ID received from a third-party bot will not work for your bot.
+
 ## Required Cloudflare / GitHub Actions secrets
 
 Keep all credentials out of source files. Configure these as GitHub Actions secrets:
