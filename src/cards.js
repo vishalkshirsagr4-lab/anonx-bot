@@ -3,6 +3,96 @@ import { state, CFG } from './config.js';
 import { tg, tgForm } from './telegram.js';
 import { kvGet, kvPut, kvDel } from './db.js';
 import { sleep, getPfpB64 } from './helpers.js';
+import { Resvg, initWasm } from '@resvg/resvg-wasm';
+import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm';
+
+let resvgReady;
+async function ensureResvg() {
+  if (!resvgReady) resvgReady = initWasm(resvgWasm);
+  return resvgReady;
+}
+
+function xmlEscape(value) {
+  return String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function wrapStickerQuote(value, maxChars = 37, maxLines = 10) {
+  const words = String(value || '').replace(/\\s+/g, ' ').trim().split(' ');
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? line + ' ' + word : word;
+    if (next.length > maxChars && line) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    lines[maxLines - 1] = lines[maxLines - 1].replace(/[.,;:!?]?$/, '…');
+  }
+  return lines;
+}
+
+function quoteStickerSvg(spec) {
+  const user = spec.user || {};
+  const name = String(user.name || 'Telegram member').slice(0, 70);
+  const username = String(user.username || '').replace(/^@/, '').slice(0, 40);
+  const quote = String(spec.subtitle || '').trim().slice(0, 420);
+  const lines = wrapStickerQuote(quote);
+  const fontSize = lines.length > 8 ? 18 : lines.length > 6 ? 20 : 23;
+  const lineHeight = fontSize + 7;
+  const startY = 285 - ((lines.length - 1) * lineHeight) / 2;
+  const quoteText = lines.map((line, i) =>
+    '<tspan x="256" y="' + (startY + i * lineHeight) + '">' + xmlEscape(line) + '</tspan>'
+  ).join('');
+  const avatar = user.pfp_b64
+    ? '<image href="data:image/jpeg;base64,' + user.pfp_b64 + '" x="196" y="34" width="120" height="120" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>'
+    : '<circle cx="256" cy="94" r="60" fill="#8b5cf6"/><text x="256" y="112" text-anchor="middle" font-size="54" fill="#fff">👤</text>';
+  const handle = username ? '@' + username : 'Telegram member';
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512" viewBox="0 0 512 512">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#111827"/><stop offset=".55" stop-color="#312e81"/><stop offset="1" stop-color="#701a75"/></linearGradient>
+      <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".18"/><stop offset="1" stop-color="#ffffff" stop-opacity=".07"/></linearGradient>
+      <clipPath id="avatarClip"><circle cx="256" cy="94" r="60"/></clipPath>
+      <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="7"/></filter>
+    </defs>
+    <rect x="12" y="12" width="488" height="488" rx="54" fill="#ffffff" opacity=".95"/>
+    <rect x="19" y="19" width="474" height="474" rx="48" fill="url(#bg)"/>
+    <circle cx="65" cy="55" r="38" fill="#a78bfa" opacity=".18"/><circle cx="454" cy="440" r="62" fill="#f0abfc" opacity=".12"/>
+    <rect x="35" y="174" width="442" height="250" rx="34" fill="url(#panel)" stroke="#ffffff" stroke-opacity=".22" stroke-width="2"/>
+    <circle cx="256" cy="94" r="66" fill="#ffffff"/>
+    ${avatar}
+    <text x="256" y="177" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#ffffff">${xmlEscape(name)}</text>
+    <text x="256" y="201" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" fill="#ddd6fe">${xmlEscape(handle)}</text>
+    <text font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="600" text-anchor="middle" fill="#ffffff">${quoteText}</text>
+    <text x="256" y="463" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" letter-spacing="3" fill="#e9d5ff">PIKO QUOTE</text>
+  </svg>`;
+}
+
+export async function sendQuoteSticker(env, chatId, spec, rest = {}) {
+  try {
+    const user = { ...(spec.user || {}) };
+    if (!user.pfp_b64 && user.fetch_pfp_id) user.pfp_b64 = await getPfpB64(env, user.fetch_pfp_id) || '';
+    const svg = quoteStickerSvg({ ...spec, user });
+    await ensureResvg();
+    const rendered = new Resvg(svg, { fitTo: { mode: 'width', value: 512 } }).render();
+    const png = new Blob([rendered.asPng()], { type: 'image/png' });
+    if (png.size > 512 * 1024) throw new Error('Sticker PNG exceeds Telegram 512 KB limit');
+    const result = await tgForm(env, 'sendSticker', {
+      chat_id: chatId,
+      sticker_format: 'static',
+      emoji: '💬',
+      ...rest
+    }, 'sticker', png, 'piko-quote.png');
+    if (!result?.ok) console.error('Piko quote sticker delivery failed:', result?.description || 'unknown Telegram error');
+    return result;
+  } catch (error) {
+    console.error('Piko quote sticker generation failed:', error?.message || String(error));
+    return { ok: false, description: error?.message || 'Sticker generation failed' };
+  }
+}
 
 export function imgBase(env) {
   const u = (env && env.IMAGE_API_URL) || state.IMAGE_API_URL;
