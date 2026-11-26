@@ -2,6 +2,7 @@
 import { state, CFG, isOwner } from './config.js';
 import { q, kvGet, kvPut, kvDel, upsertGroup, touchUser, getCoins, spendCoins, getUser } from './db.js';
 import { tg } from './telegram.js';
+import { STICKERS, sendStickerThenButtons } from './stickers.js';
 import { send, editCq, deleteCq, sendCard, welcomeSpec, botProfileSpec, revealSpec } from './cards.js';
 import { getHelp, helpMainView } from './help.js';
 import { handleSettingsCb, settingsView } from './settings.js';
@@ -69,6 +70,10 @@ async function handleGroupMessage(msg, env) {
     await touchUser(env, msg.from, false);
   }
 
+  if (Array.isArray(msg.new_chat_members) && msg.new_chat_members.length) {
+    return handleNewChatMembers(msg, env);
+  }
+
   const cmd = parseCommand(msg.text || '');
   // Active word-game guesses must be processed before Piko's general group AI.
   if (!cmd && await handleGameMessage(env, msg)) return;
@@ -113,6 +118,26 @@ async function handleGroupMessage(msg, env) {
     if (!isOwner(msg.from.id)) return send(env, chatId, `⛔ Owner only.`, { reply_to_message_id: msg.message_id });
     return delcontestGroupView(env, chatId, chatId, msg.message_id);
   }
+}
+
+async function handleNewChatMembers(msg, env) {
+  const chatId = String(msg.chat.id);
+  const names = msg.new_chat_members
+    .filter(member => !member.is_bot)
+    .map(member => userLink(member.id, member.first_name || 'friend'));
+  if (!names.length) return;
+
+  const text = `Welcome ${names.join(', ')} to <b>${esc(msg.chat.title || 'the group')}</b>! 👋\n\nI am <b>${esc(state.BOT_NAME)}</b>. Use the Help button below to see group commands.`;
+  const markup = {
+    inline_keyboard: [[{ text: '📖 Help', callback_data: 'group_help' }]]
+  };
+
+  return sendStickerThenButtons(env, chatId, {
+    sticker: STICKERS.welcome,
+    text,
+    markup,
+    replyToMessageId: msg.message_id
+  });
 }
 
 async function groupStart(env, msg) {
@@ -211,19 +236,13 @@ async function handleDM(msg, env, ctx) {
             reply_markup: v.markup
           });
         }
-        const spec = await welcomeSpec(env, msg.from);
         const startTxt = await dashboardCaption(env, msg.from);
         const markup = await dashboardMarkup(env, msg.from);
-        const photo = await tg(env, 'sendPhoto', {
-          chat_id: chatId,
-          photo: 'https://raw.githubusercontent.com/vishalkshirsagr4-lab/anonx-bot/main/pippo.jpg',
-          caption: startTxt,
-          parse_mode: 'HTML',
-          reply_markup: markup
+        return sendStickerThenButtons(env, chatId, {
+          sticker: STICKERS.start,
+          text: startTxt,
+          markup
         });
-        if (photo.ok) return photo;
-        console.error('DM /start photo failed:', photo.description || 'sendPhoto failed');
-        return send(env, chatId, startTxt, { card: spec, reply_markup: markup });
       }
 
       case 'help': {
