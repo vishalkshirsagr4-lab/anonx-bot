@@ -3,7 +3,6 @@
 import { state, isOwner } from './config.js';
 import { q, batch, kvGet, kvPut, kvDel } from './db.js';
 import { tg, tgForm } from './telegram.js';
-import { sendQuoteSticker } from './cards.js';
 import { sendAnonMessage } from './anon.js';
 import { getBotInfo } from './helpers.js';
 
@@ -310,55 +309,6 @@ async function whisperCommand(env,msg,cmd) {
   await reply(env, msg.chat.id, '🔐 A whisper message to ' + mention(target) + '.\nOnly they can read the message.');
 }
 
-
-async function quoteMaker(env, msg, cmd) {
-  const raw = String(cmd.arg || '').trim();
-  const match = raw.match(/^make(?:\s+([\s\S]*))?$/i);
-  if (!match) {
-    return reply(env, msg.chat.id,
-      '🖼️ <b>Piko Quote Maker</b>\\n\\nReply to a message with <code>/q make</code> to create a profile quote card.\\nOr use <code>/q make Your quote text</code> to create one with your own profile photo.');
-  }
-
-  const replied = msg.reply_to_message;
-  // If the replied-to message belongs to a bot (including Piko), use the
-  // command sender's profile while keeping the replied text as the quote.
-  const target = replied?.from && !replied.from.is_bot ? replied.from : msg.from;
-  if (!target || target.is_bot) {
-    return reply(env, msg.chat.id, '❌ I need a Telegram user profile to make this quote card.');
-  }
-
-  const customText = String(match[1] || '').trim();
-  const quoteText = (customText || (replied?.text || replied?.caption || '')).trim();
-  if (!quoteText) {
-    return reply(env, msg.chat.id,
-      'ℹ️ Reply to a text/photo caption with <code>/q make</code>, or send <code>/q make Your quote</code>.');
-  }
-  if (quoteText.length > 420) {
-    return reply(env, msg.chat.id, '❌ Keep the quote under 420 characters so it fits the design.');
-  }
-
-  const displayName = [target.first_name, target.last_name].filter(Boolean).join(' ').slice(0, 80) || 'Telegram User';
-  const spec = {
-    icon: 'chat',
-    badge: 'PIKO QUOTE',
-    title: 'QUOTE',
-    subtitle: quoteText,
-    lines: [['BY', displayName], ['PROFILE', target.username ? '@' + target.username : 'Telegram member']],
-    user: { name: displayName, username: target.username || '', fetch_pfp_id: target.id },
-    adaptive_bg: true,
-    cache: false
-  };
-
-  const result = await sendQuoteSticker(env, msg.chat.id, spec, {
-    reply_to_message_id: msg.message_id
-  }, msg.from.id);
-  if (!result?.ok) {
-    return reply(env, msg.chat.id,
-      '⚠️ I could not create the Telegram sticker right now. Please try again shortly. No credits were charged.',
-      { reply_to_message_id: msg.message_id });
-  }
-  return result;
-}
 
 async function economy(env,msg,cmd) {
   const id=msg.from.id, a=argsOf(cmd.arg), p=await profile(env,msg.from), now=Date.now();
@@ -822,7 +772,6 @@ export async function handlePikoDM(msg,env,cmd){
   if(cmd&&PIKO_COMMANDS.has(cmd.name)){
     await profile(env,msg.from);
     if(cmd.name==='reply'){await replyByMessageLink(env,msg,cmd);return true;}
-    if(cmd.name==='q'){await quoteMaker(env,msg,cmd);return true;}
     if(cmd.name==='whisper'){await whisperCommand(env,msg,cmd);return true;}
     if(['credits','wallet','daily','work','crime','rob','pay','convert'].includes(cmd.name)){await economy(env,msg,cmd);return true;}
     if(cmd.name==='img'){await imageCommand(env,msg,cmd);return true;}

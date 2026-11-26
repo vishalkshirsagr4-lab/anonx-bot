@@ -16,6 +16,5 @@
     "wrangler": "^3.90.0"
   },
   "dependencies": {
-    "@resvg/resvg-wasm": "^2.6.2"
   }
 }
