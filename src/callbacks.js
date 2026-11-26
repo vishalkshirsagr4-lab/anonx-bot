@@ -18,6 +18,7 @@ import {
 import { getBotInfo, esc } from './helpers.js';
 import { handleGameCallback } from './games.js';
 import { handleDashboardCallback } from './dashboard.js';
+import { sendPikoSticker } from './piko.js';
 
 export async function handleCallback(cq, env) {
   const data = cq.data || '';
@@ -65,6 +66,7 @@ export async function handleCallback(cq, env) {
 
     // ─── Help navigation ───
     if (data.startsWith('help_')) {
+      await sendPikoSticker(env, cq.message.chat.id, 'help');
       const [action, callbackOrigin] = data.split(':');
 
       const section = action === 'help_main_start'
@@ -158,6 +160,7 @@ export async function handleCallback(cq, env) {
 
     // ─── Back to start ───
     if (data === 'back_start') {
+      await sendPikoSticker(env, cq.message.chat.id, 'start');
       const welcome =
         `Hello ${esc(cq.from.first_name)} 👋\n\n` +
         `I am <b>${esc(state.BOT_NAME)}</b> — the ` +
@@ -187,6 +190,7 @@ export async function handleCallback(cq, env) {
 
     // ─── Group help ───
     if (data === 'group_help') {
+      await sendPikoSticker(env, cq.message.chat.id, 'help');
       return editCq(env, cq, '📚 <b>Group Help</b>\n\nUse /help to view the available commands and group tools.', {
         inline_keyboard: [[{ text: '🔙 Back', callback_data: 'back_start' }]]
       });
