@@ -907,6 +907,7 @@ function memberWelcomeCaption(member, chat, configuredText) {
 
 async function sendMemberWelcome(env, msg, member, welcomeText) {
   const caption = memberWelcomeCaption(member, msg.chat, welcomeText);
+  await sendPikoSticker(env, msg.chat.id, 'welcome');
   const order = Math.random() < 0.5
     ? MEMBER_WELCOME_VIDEOS
     : [MEMBER_WELCOME_VIDEOS[1], MEMBER_WELCOME_VIDEOS[0]];
