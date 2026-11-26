@@ -37,47 +37,61 @@ function wrapStickerQuote(value, maxChars = 37, maxLines = 10) {
 
 function quoteStickerSvg(spec) {
   const user = spec.user || {};
-  const name = String(user.name || 'Telegram member').replace(/\s+/g, ' ').trim().slice(0, 28);
-  const username = String(user.username || '').replace(/^@/, '').slice(0, 30);
-  const quote = String(spec.subtitle || '').replace(/\s+/g, ' ').trim().slice(0, 420);
-  const lines = wrapStickerQuote(quote || ' ', 25, 8);
-  const fontSize = lines.length > 6 ? 19 : lines.length > 4 ? 21 : 23;
-  const lineHeight = fontSize + 10;
-  const textStartY = 207;
+  const name = String(user.name || 'Telegram member').replace(/\\s+/g, ' ').trim().slice(0, 26);
+  const username = String(user.username || '').replace(/^@/, '').slice(0, 28);
+  const quote = String(spec.subtitle || '').replace(/\\s+/g, ' ').trim().slice(0, 420);
+  // Keep the quote readable at sticker size instead of shrinking it to fit.
+  const lines = wrapStickerQuote(quote || ' ', 29, 7);
+  if (lines.length === 7 && lines[6].length >= 27) {
+    lines[6] = lines[6].slice(0, 26).replace(/[.,;:!?]?$/, '') + '…';
+  }
+  const fontSize = lines.length > 5 ? 19 : lines.length > 3 ? 21 : 23;
+  const lineHeight = fontSize + 9;
   const quoteText = lines.map((line, i) =>
-    '<text x="158" y="' + (textStartY + i * lineHeight) +
+    '<text x="158" y="' + (224 + i * lineHeight) +
     '" font-family="Arial,sans-serif" font-size="' + fontSize +
-    '" font-weight="500" fill="#17212b">' + xmlEscape(line) + '</text>'
+    '" font-weight="600" fill="#f7fbff">' + xmlEscape(line) + '</text>'
   ).join('');
   const initials = xmlEscape((name || 'T').trim().charAt(0).toUpperCase());
-  const avatar = user.pfp_b64
-    ? '<image xlink:href="data:image/jpeg;base64,' + user.pfp_b64 +
-      '" x="27" y="105" width="108" height="108" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>'
-    : '<circle cx="81" cy="159" r="54" fill="#dce9f5"/><text x="81" y="175" text-anchor="middle" font-family="Arial,sans-serif" font-size="43" font-weight="700" fill="#41627e">' + initials + '</text>';
+  const cleanAvatar = String(user.pfp_b64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
+  const avatar = cleanAvatar
+    ? '<image href="data:image/jpeg;base64,' + cleanAvatar +
+      '" x="25" y="137" width="112" height="112" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>'
+    : '<circle cx="81" cy="193" r="56" fill="#d8eaff"/><text x="81" y="210" text-anchor="middle" font-family="Arial,sans-serif" font-size="44" font-weight="700" fill="#244d78">' + initials + '</text>';
   const handle = username ? '@' + username : 'Telegram member';
-  const bubbleBottom = 115 + Math.max(250, 130 + lines.length * lineHeight);
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512" viewBox="0 0 512 512">
+  const footerY = Math.min(430, 248 + lines.length * lineHeight);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
     <defs>
-      <clipPath id="avatarClip"><circle cx="81" cy="159" r="54"/></clipPath>
-      <filter id="shadow" x="-25%" y="-25%" width="150%" height="160%">
-        <feGaussianBlur stdDeviation="8"/>
-      </filter>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#101d36"/>
+        <stop offset="1" stop-color="#273c68"/>
+      </linearGradient>
+      <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#243e5e"/>
+        <stop offset="1" stop-color="#172b45"/>
+      </linearGradient>
+      <clipPath id="avatarClip"><circle cx="81" cy="193" r="56"/></clipPath>
     </defs>
-    <path d="M143 75 H466 Q490 75 490 99 V${bubbleBottom - 20} Q490 ${bubbleBottom} 466 ${bubbleBottom} H143 Q119 ${bubbleBottom} 119 ${bubbleBottom - 20} V99 Q119 75 143 75Z"
-      fill="#14202b" opacity=".20" transform="translate(0 9)" filter="url(#shadow)"/>
-    <path d="M143 67 H466 Q490 67 490 91 V${bubbleBottom - 20} Q490 ${bubbleBottom} 466 ${bubbleBottom} H143 Q119 ${bubbleBottom} 119 ${bubbleBottom - 20} V91 Q119 67 143 67Z"
-      fill="#ffffff" stroke="#d8e1e8" stroke-width="3"/>
-    <path d="M128 132 Q104 136 112 166 Q120 155 137 151Z" fill="#d9fdd3" stroke="#d8e1e8" stroke-width="2"/>
-    <path d="M143 70 H466 Q487 70 487 92 V166 H122 V92 Q122 70 143 70Z" fill="#d9fdd3"/>
-    <circle cx="81" cy="159" r="60" fill="#ffffff" stroke="#ffffff" stroke-width="5"/>
+    <rect width="512" height="512" rx="54" fill="url(#bg)"/>
+    <circle cx="462" cy="58" r="94" fill="#547bd0" opacity=".16"/>
+    <circle cx="28" cy="470" r="110" fill="#21c7a8" opacity=".10"/>
+    <rect x="105" y="55" width="382" height="402" rx="30" fill="#0b1425" opacity=".28"/>
+    <rect x="99" y="47" width="382" height="402" rx="30" fill="url(#panel)" stroke="#7895c7" stroke-width="2"/>
+    <rect x="99" y="47" width="382" height="9" rx="4" fill="#39d6b0"/>
+    <circle cx="81" cy="193" r="65" fill="#0c1830" opacity=".55"/>
+    <circle cx="81" cy="193" r="60" fill="#f5f9ff" stroke="#ffffff" stroke-width="5"/>
     ${avatar}
-    <text x="157" y="112" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#176b55">${xmlEscape(name)}</text>
-    <text x="157" y="140" font-family="Arial,sans-serif" font-size="14" fill="#55786d">${xmlEscape(handle)}</text>
-    <path d="M157 169 H452" stroke="#c3e8ca" stroke-width="2"/>
+    <text x="157" y="94" font-family="Arial,sans-serif" font-size="14" font-weight="700" letter-spacing="2" fill="#62e4c2">PIKO • QUOTE</text>
+    <text x="157" y="132" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="#ffffff">${xmlEscape(name)}</text>
+    <text x="157" y="157" font-family="Arial,sans-serif" font-size="15" fill="#b8cce6">${xmlEscape(handle)}</text>
+    <path d="M132 180 H450" stroke="#6683a8" stroke-width="2" opacity=".65"/>
+    <rect x="127" y="194" width="326" height="${Math.max(178, 65 + lines.length * lineHeight)}" rx="18" fill="#304d70" opacity=".72"/>
+    <text x="148" y="215" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#79e6ca">MESSAGE</text>
     ${quoteText}
-    <text x="405" y="${Math.min(449, bubbleBottom - 18)}" font-family="Arial,sans-serif" font-size="12" fill="#6d8c80">now</text>
-    <text x="475" y="${Math.min(449, bubbleBottom - 18)}" text-anchor="end" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#339b81">✓✓</text>
-    <text x="256" y="493" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="2" fill="#ffffff" stroke="#253746" stroke-width="2.5" paint-order="stroke">PIKO • QUOTE</text>
+    <path d="M128 414 H452" stroke="#6683a8" stroke-width="1.5" opacity=".55"/>
+    <text x="148" y="438" font-family="Arial,sans-serif" font-size="12" font-weight="600" fill="#a9bfdc">Shared with Piko</text>
+    <text x="450" y="438" text-anchor="end" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#54e0bd">✓✓</text>
+    <text x="256" y="490" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="3" fill="#dce9ff">PIKO STICKER</text>
   </svg>`;
 }
 
