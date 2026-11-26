@@ -37,11 +37,11 @@ function wrapStickerQuote(value, maxChars = 37, maxLines = 10) {
 
 function quoteStickerSvg(spec) {
   const user = spec.user || {};
-  const name = String(user.name || 'Telegram member').replace(/\\s+/g, ' ').trim().slice(0, 42);
+  const name = String(user.name || 'Telegram member').replace(/\\s+/g, ' ').trim().slice(0, 30);
   const username = String(user.username || '').replace(/^@/, '').slice(0, 32);
   const quote = String(spec.subtitle || '').replace(/\\s+/g, ' ').trim().slice(0, 420);
-  const lines = wrapStickerQuote(quote, 29, 10);
-  const fontSize = lines.length > 8 ? 20 : lines.length > 6 ? 22 : 25;
+  const lines = wrapStickerQuote(quote, 24, 9);
+  const fontSize = lines.length > 8 ? 18 : lines.length > 6 ? 20 : 23;
   const lineHeight = fontSize + 9;
   const textStartY = 190;
   const quoteText = lines.map((line, i) =>
