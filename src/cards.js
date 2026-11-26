@@ -42,8 +42,8 @@ function quoteStickerSvg(spec) {
   const username = String(user.username || '').replace(/^@/, '').slice(0, 24);
   const quote = String(spec.subtitle || '').replace(/\\s+/g, ' ').trim().slice(0, 420);
   const lines = wrapStickerQuote(quote || ' ', 27, 5);
-  const fontSize = lines.length > 4 ? 19 : lines.length > 2 ? 21 : 23;
-  const lineHeight = fontSize + 10;
+  const fontSize = lines.length > 4 ? 17 : lines.length > 2 ? 20 : 23;
+  const lineHeight = fontSize + 7;
   const quoteText = lines.map((line, i) =>
     '<text x="165" y="' + (273 + i * lineHeight) +
     '" font-family="Arial,sans-serif" font-size="' + fontSize +
