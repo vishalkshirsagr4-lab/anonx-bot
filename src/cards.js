@@ -38,53 +38,39 @@ function wrapStickerQuote(value, maxChars = 27, maxLines = 7) {
 
 function quoteStickerSvg(spec) {
   const user = spec.user || {};
-  const name = String(user.name || 'Telegram member').replace(/\s+/g, ' ').trim().slice(0, 25);
+  const name = String(user.name || 'Telegram member').replace(/\\s+/g, ' ').trim().slice(0, 25);
   const username = String(user.username || '').replace(/^@/, '').slice(0, 24);
-  const quote = String(spec.subtitle || '').replace(/\s+/g, ' ').trim().slice(0, 420);
-  const lines = wrapStickerQuote(quote || ' ', 27, 7);
-  const fontSize = lines.length > 5 ? 19 : lines.length > 3 ? 21 : 23;
-  const lineHeight = fontSize + 9;
+  const quote = String(spec.subtitle || '').replace(/\\s+/g, ' ').trim().slice(0, 420);
+  // Keep the design inside the sticker canvas and use only basic SVG primitives.
+  // This avoids SVG image embedding, clipping, gradients and CSS that can render
+  // inconsistently in edge WASM rasterizers.
+  const lines = wrapStickerQuote(quote || ' ', 27, 5);
+  const fontSize = lines.length > 4 ? 19 : lines.length > 2 ? 21 : 23;
+  const lineHeight = fontSize + 10;
   const quoteText = lines.map((line, i) =>
-    '<text x="177" y="' + (247 + i * lineHeight) +
-    '" font-family="DejaVu Sans,Arial,sans-serif" font-size="' + fontSize +
+    '<text x="166" y="' + (268 + i * lineHeight) +
+    '" font-family="Arial,sans-serif" font-size="' + fontSize +
     '" font-weight="600" fill="#17324d">' + xmlEscape(line) + '</text>'
   ).join('');
   const initials = xmlEscape((name || 'T').trim().charAt(0).toUpperCase());
-  const cleanAvatar = String(user.pfp_b64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
-  const avatar = cleanAvatar
-    ? '<image href="data:image/jpeg;base64,' + cleanAvatar +
-      '" x="25" y="169" width="112" height="112" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>'
-    : '<circle cx="81" cy="225" r="56" fill="#dceeff"/><text x="81" y="241" text-anchor="middle" font-family="DejaVu Sans,Arial,sans-serif" font-size="44" font-weight="700" fill="#23618b">' + initials + '</text>';
   const handle = username ? '@' + username : 'Telegram member';
-  const bubbleHeight = Math.max(196, 100 + lines.length * lineHeight);
-  const footerY = Math.min(455, 271 + bubbleHeight);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9f5ff"/><stop offset="1" stop-color="#c9e6ff"/></linearGradient>
-      <linearGradient id="bubble" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f3f9ff"/></linearGradient>
-      <clipPath id="avatarClip"><circle cx="81" cy="225" r="56"/></clipPath>
-    </defs>
-    <rect width="512" height="512" rx="48" fill="url(#bg)"/>
-    <circle cx="468" cy="48" r="105" fill="#ffffff" opacity=".34"/>
-    <circle cx="25" cy="490" r="100" fill="#72c7ef" opacity=".20"/>
-    <rect x="98" y="55" width="390" height="402" rx="30" fill="#6b9fc3" opacity=".18"/>
-    <rect x="91" y="48" width="390" height="402" rx="30" fill="url(#bubble)" stroke="#b9d9ef" stroke-width="2"/>
-    <rect x="91" y="48" width="390" height="9" rx="4" fill="#28a8e0"/>
-    <circle cx="81" cy="225" r="65" fill="#ffffff" stroke="#ffffff" stroke-width="5"/>
-    <circle cx="81" cy="225" r="60" fill="#dceeff" stroke="#2a9ed2" stroke-width="3"/>
-    ${avatar}
-    <text x="155" y="91" font-family="DejaVu Sans,Arial,sans-serif" font-size="13" font-weight="700" letter-spacing="1.7" fill="#1687b8">TELEGRAM MESSAGE</text>
-    <text x="155" y="129" font-family="DejaVu Sans,Arial,sans-serif" font-size="22" font-weight="700" fill="#17324d">${xmlEscape(name)}</text>
-    <text x="155" y="154" font-family="DejaVu Sans,Arial,sans-serif" font-size="14" fill="#66839b">${xmlEscape(handle)}</text>
-    <rect x="119" y="177" width="334" height="${bubbleHeight}" rx="23" fill="#e7f4ff" stroke="#c5e2f5" stroke-width="1.5"/>
-    <path d="M119 201 L102 215 L119 225 Z" fill="#e7f4ff"/>
-    <text x="145" y="218" font-family="DejaVu Sans,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="1.3" fill="#258db8">QUOTED MESSAGE</text>
+    <rect x="0" y="0" width="512" height="512" fill="#d9efff"/>
+    <rect x="24" y="24" width="464" height="464" rx="30" fill="#ffffff"/>
+    <rect x="24" y="24" width="464" height="12" fill="#168fc2"/>
+    <circle cx="93" cy="121" r="48" fill="#dceeff" stroke="#258db8" stroke-width="4"/>
+    <text x="93" y="137" text-anchor="middle" font-family="Arial,sans-serif" font-size="42" font-weight="700" fill="#23618b">${initials}</text>
+    <text x="158" y="105" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#1687b8">TELEGRAM MESSAGE</text>
+    <text x="158" y="137" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#17324d">${xmlEscape(name)}</text>
+    <text x="158" y="162" font-family="Arial,sans-serif" font-size="14" fill="#66839b">${xmlEscape(handle)}</text>
+    <rect x="48" y="195" width="416" height="238" rx="22" fill="#e7f4ff" stroke="#9bcce9" stroke-width="2"/>
+    <text x="76" y="232" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#258db8">QUOTED MESSAGE</text>
     ${quoteText}
-    <path d="M145 ${footerY - 24} H425" stroke="#c7dfef" stroke-width="1.5"/>
-    <text x="145" y="${footerY}" font-family="DejaVu Sans,Arial,sans-serif" font-size="12" font-weight="600" fill="#7894a8">via Piko</text>
-    <text x="426" y="${footerY}" text-anchor="end" font-family="DejaVu Sans,Arial,sans-serif" font-size="17" font-weight="700" fill="#28a8e0">✓✓</text>
-    <rect x="175" y="473" width="162" height="25" rx="12" fill="#168fc2"/>
-    <text x="256" y="490" text-anchor="middle" font-family="DejaVu Sans,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.5" fill="#ffffff">PIKO QUOTE</text>
+    <path d="M76 390 H436" stroke="#c7dfef" stroke-width="2"/>
+    <text x="76" y="416" font-family="Arial,sans-serif" font-size="13" font-weight="600" fill="#54758d">via Piko</text>
+    <text x="436" y="416" text-anchor="end" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#168fc2">✓✓</text>
+    <rect x="174" y="452" width="164" height="25" rx="12" fill="#168fc2"/>
+    <text x="256" y="469" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#ffffff">PIKO QUOTE</text>
   </svg>`;
 }
 
@@ -93,7 +79,22 @@ function isValidStickerPng(bytes) {
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
   if (!signature.every((value, index) => bytes[index] === value)) return false;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  return view.getUint32(16, false) === 512 && view.getUint32(20, false) === 512;
+  if (view.getUint32(16, false) !== 512 || view.getUint32(20, false) !== 512) return false;
+
+  // Confirm the PNG contains actual compressed image data and a complete end
+  // marker, rather than accepting a header-only or truncated file.
+  let offset = 8;
+  let hasImageData = false;
+  let hasEnd = false;
+  while (offset + 12 <= bytes.length) {
+    const length = view.getUint32(offset, false);
+    if (length > bytes.length - offset - 12) return false;
+    const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    if (type === 'IDAT' && length > 0) hasImageData = true;
+    offset += 12 + length;
+    if (type === 'IEND') { hasEnd = true; break; }
+  }
+  return hasImageData && hasEnd;
 }
 function stickerPackName(userId, botUsername) {
   const username = String(botUsername || '').replace(/[^a-zA-Z0-9_]/g, '');
