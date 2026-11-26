@@ -12,29 +12,23 @@ Piko runs on Cloudflare Workers with Turso (libSQL) storage. Existing anonymous 
 - Admin group moderation: `/ban`, `/unban`
 - Owner tools: `/admin`, `/stats`, `/addcredits`, `/addcoins`, `/gban`, `/ungban`
 
-## Stickers
+## Stickers and chat greetings
 
-Telegram sticker messages cannot carry an inline keyboard. Piko therefore sends greeting flows as two messages in order: (1) the exact sticker, then (2) the text with its inline keyboard buttons.
+Piko supports owner-managed Telegram sticker packs stored in the existing Turso key-value store. No Cloudflare logs, source edits, or manual file_id copying are needed.
 
-### Get a sticker file_id
+In a private chat with Piko, the configured owner can:
 
-- Use @RawDataBot or @JsonDumpBot: forward the sticker and copy `message.sticker.file_id` from the returned data.
-- Or temporarily add this Pyrogram handler:
+1. Send the sticker you want to use.
+2. Reply directly to that sticker with `/setsticker welcome` (replace `welcome` with a category).
+3. Use `/teststicker welcome` to preview it.
+4. Use `/stickers` to see configured categories.
+5. Use `/removesticker welcome` to remove a category.
 
-  ```python
-  @app.on_message(filters.sticker)
-  async def _log(_, m): print(m.sticker.file_id)
-  ```
+Supported categories: `welcome`, `start`, `help`, `success`, `error`, `contest`, `wallet`, `game`, `test`, and `general`.
 
-  Send the sticker to your bot and copy the printed ID.
-- Or, in the Worker webhook, temporarily log `message.sticker.file_id` from the incoming update payload.
+The Worker uses saved stickers in the start screen, help navigation, new-member greetings, and matching Piko replies. Sticker messages appear immediately before the corresponding text or button message because Telegram does not allow stickers and inline keyboards in one message. If a category has no sticker, the original text and buttons still work normally. Existing buttons and callback data are preserved.
 
-### Where to paste file_ids
-
-- Worker: paste IDs into the named fields in `src/stickers.js` (`STICKERS` object).
-- Pyrogram: paste IDs into `STICKER_START`, `STICKER_WELCOME`, and `STICKER_HELP` in `baka.py`.
-
-**Important:** Telegram file_ids are bot-specific. Obtain each file_id using YOUR bot; an ID received from a third-party bot will not work for your bot.
+Only the configured bot owner can manage sticker packs. Sticker file IDs are saved in Turso, so they survive Worker redeployments. Telegram file IDs must belong to this bot.
 
 ## Required Cloudflare / GitHub Actions secrets
 
