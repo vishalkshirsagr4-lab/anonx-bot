@@ -9,6 +9,52 @@ export function imgBase(env) {
   return (u || '').replace(/\/(result|card|leaderboard)\/?$/, '').replace(/\/$/, '');
 }
 
+function decodeBase64Image(value) {
+  try {
+    const binary = atob(String(value || ''));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: 'image/jpeg' });
+  } catch {
+    return null;
+  }
+}
+
+function quoteFallbackCaption(spec) {
+  const escHtml = value => String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const user = spec.user || {};
+  const quote = String(spec.subtitle || '').trim();
+  const name = String(user.name || 'Telegram member').trim();
+  const username = String(user.username || '').trim();
+  const lines = ['🖼️ <b>Piko Quote</b>', '', '“' + escHtml(quote).slice(0, 650) + '”', '', '— <b>' + escHtml(name).slice(0, 80) + '</b>'];
+  if (username) lines.push(escHtml(username.startsWith('@') ? username : '@' + username).slice(0, 64));
+  return lines.join('\n').slice(0, 1024);
+}
+
+async function makeWorkersAiFallback(env, spec) {
+  if (!env?.AI || typeof env.AI.run !== 'function') return null;
+  try {
+    const result = await env.AI.run('@cf/black-forest-labs/flux-1-schnell', {
+      prompt: 'Create a polished square abstract editorial background for a social media quote card. Deep midnight navy and violet gradient, subtle luminous accents, elegant soft texture, generous clean negative space in the center, no words, no letters, no logos, no watermark.',
+      width: 1024,
+      height: 1024,
+      num_steps: 4
+    });
+    const image = result?.image || result;
+    if (typeof image === 'string') return decodeBase64Image(image);
+    if (image instanceof Uint8Array || image instanceof ArrayBuffer) {
+      return new Blob([image], { type: 'image/png' });
+    }
+    if (image && typeof image.arrayBuffer === 'function') {
+      return new Blob([await image.arrayBuffer()], { type: 'image/png' });
+    }
+  } catch (error) {
+    console.error('Workers AI quote background failed:', error?.message || String(error));
+  }
+  return null;
+}
+
 export async function fetchImg(env, path, body, timeoutMs = 5000) {
   const base = imgBase(env);
   if (!base) return null;
@@ -163,7 +209,48 @@ export async function sendCard(env, chatId, spec, caption, rest = {}) {
   const blob = await fetchImg(env, '/card', body, 20000);
   await anim;
   if (mid) await tg(env, 'deleteMessage', { chat_id: chatId, message_id: mid });
-  if (!blob) return null;
+
+  // Keep quote creation usable even when the optional external card renderer
+  // is not configured. Prefer the user's real Telegram avatar; otherwise use
+  // the already-bound Cloudflare Workers AI image model for a clean backdrop.
+  if (!blob && body.user?.pfp_b64) {
+    const avatar = decodeBase64Image(body.user.pfp_b64);
+    if (avatar) {
+      const fallback = await tgForm(env, 'sendPhoto', {
+        ...base,
+        caption: quoteFallbackCaption(body),
+        parse_mode: 'HTML'
+      }, 'photo', avatar, 'piko-quote.jpg');
+      if (fallback.ok) return fallback;
+      console.error('Piko quote avatar fallback failed:', fallback.description || 'sendPhoto failed');
+    }
+  }
+
+  if (!blob) {
+    const generated = await makeWorkersAiFallback(env, body);
+    if (generated) {
+      const fallback = await tgForm(env, 'sendPhoto', {
+        ...base,
+        caption: quoteFallbackCaption(body),
+        parse_mode: 'HTML'
+      }, 'photo', generated, 'piko-quote.png');
+      if (fallback.ok) return fallback;
+      console.error('Piko Workers AI quote fallback failed:', fallback.description || 'sendPhoto failed');
+    }
+  }
+
+  // Last-resort text quote: never fail silently when image generation is
+  // unavailable, and do not consume credits for this fallback.
+  if (!blob) {
+    const fallback = await tg(env, 'sendMessage', {
+      chat_id: chatId,
+      text: quoteFallbackCaption(body),
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...rest
+    });
+    return fallback?.ok ? fallback : null;
+  }
 
   const r = await tgForm(env, 'sendPhoto', base, 'photo', blob, 'card.png');
   if (!r.ok) return null;
