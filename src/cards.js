@@ -45,7 +45,7 @@ function quoteStickerSvg(spec) {
   const fontSize = lines.length > 4 ? 17 : lines.length > 2 ? 20 : 23;
   const lineHeight = fontSize + 7;
   const quoteText = lines.map((line, i) =>
-    '<text x="165" y="' + (273 + i * lineHeight) +
+    '<text x="165" y="' + (267 + i * lineHeight) +
     '" font-family="Arial,sans-serif" font-size="' + fontSize +
     '" font-weight="600" fill="#172b4d">' + xmlEscape(line) + '</text>'
   ).join('');
