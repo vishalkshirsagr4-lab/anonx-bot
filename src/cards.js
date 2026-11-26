@@ -87,7 +87,10 @@ async function addQuoteToUserPack(env, userId, botUsername, displayName, png) {
       user_id: userId, name, sticker: JSON.stringify({ ...stickerSpec[0], sticker: 'attach://file' })
     }, 'file', png, 'piko-quote.png');
     if (!added?.ok) throw new Error(added?.description || 'Could not add the quote to your sticker pack');
-    return { name, title };
+    const refreshed = await tg(env, 'getStickerSet', { name });
+    const latest = refreshed?.ok ? refreshed.result.stickers?.at(-1) : null;
+    if (!latest?.file_id) throw new Error('Sticker was added, but Telegram did not return its sticker file ID');
+    return { name, title, fileId: latest.file_id };
   }
 
   const created = await tgForm(env, 'createNewStickerSet', {
@@ -100,7 +103,10 @@ async function addQuoteToUserPack(env, userId, botUsername, displayName, png) {
     }, 'file', png, 'piko-quote.png');
     if (!retry?.ok) throw new Error(created?.description || retry?.description || 'Could not create the user sticker pack');
   }
-  return { name, title };
+  const refreshed = await tg(env, 'getStickerSet', { name });
+  const latest = refreshed?.ok ? refreshed.result.stickers?.at(-1) : null;
+  if (!latest?.file_id) throw new Error('Sticker pack was created, but Telegram did not return its sticker file ID');
+  return { name, title, fileId: latest.file_id };
 }
 
 export async function sendQuoteSticker(env, chatId, spec, rest = {}, packOwnerId) {
@@ -119,11 +125,13 @@ export async function sendQuoteSticker(env, chatId, spec, rest = {}, packOwnerId
     if (!botInfo?.username) throw new Error('Could not identify the bot username');
     const pack = await addQuoteToUserPack(env, ownerId, botInfo.username, user.name, png);
 
-    const sent = await tgForm(env, 'sendSticker', {
-      chat_id: chatId, sticker_format: 'static', emoji: '💬',
+    const sent = await tg(env, 'sendSticker', {
+      chat_id: chatId,
+      sticker: pack.fileId,
+      emoji: '💬',
       reply_markup: { inline_keyboard: [[{ text: '📦 Open my quote sticker pack', url: 'https://t.me/addstickers/' + pack.name }]] },
       ...rest
-    }, 'sticker', png, 'piko-quote.png');
+    });
     if (!sent?.ok) throw new Error(sent?.description || 'Sticker was added to your pack, but could not be sent to the chat');
     return { ...sent, sticker_pack_name: pack.name, sticker_pack_title: pack.title };
   } catch (error) {
