@@ -324,7 +324,7 @@ export async function startRun(env, chatId, st, now) {
       ]]
     };
 
-    if (typeof STICKERS.contest_open === 'string' && STICKERS.contest_open.trim()) {
+    if (typeof STICKERS.contest_open === 'string' && STICKERS.contest_open.trim() && STICKERS.contest_open !== 'PASTE_FILE_ID_HERE') {
       try {
         const stickerResult = await tg(env, 'sendSticker', {
           chat_id: chatId,
