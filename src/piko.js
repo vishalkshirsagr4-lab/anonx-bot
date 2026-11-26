@@ -313,7 +313,7 @@ async function whisperCommand(env,msg,cmd) {
 
 async function quoteMaker(env, msg, cmd) {
   const raw = String(cmd.arg || '').trim();
-  const match = raw.match(/^make(?:\\s+([\\s\\S]*))?$/i);
+  const match = raw.match(/^make(?:\s+([\s\S]*))?$/i);
   if (!match) {
     return reply(env, msg.chat.id,
       '🖼️ <b>Piko Quote Maker</b>\\n\\nReply to a message with <code>/q make</code> to create a profile quote card.\\nOr use <code>/q make Your quote text</code> to create one with your own profile photo.');
@@ -351,7 +351,7 @@ async function quoteMaker(env, msg, cmd) {
 
   const result = await sendQuoteSticker(env, msg.chat.id, spec, {
     reply_to_message_id: msg.message_id
-  });
+  }, msg.from.id);
   if (!result?.ok) {
     return reply(env, msg.chat.id,
       '⚠️ I could not create the Telegram sticker right now. Please try again shortly. No credits were charged.',
