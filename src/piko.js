@@ -320,9 +320,11 @@ async function quoteMaker(env, msg, cmd) {
   }
 
   const replied = msg.reply_to_message;
-  const target = replied?.from || msg.from;
+  // If the replied-to message belongs to a bot (including Piko), use the
+  // command sender's profile while keeping the replied text as the quote.
+  const target = replied?.from && !replied.from.is_bot ? replied.from : msg.from;
   if (!target || target.is_bot) {
-    return reply(env, msg.chat.id, '❌ I need a message from a Telegram user to make this quote card.');
+    return reply(env, msg.chat.id, '❌ I need a Telegram user profile to make this quote card.');
   }
 
   const customText = String(match[1] || '').trim();
