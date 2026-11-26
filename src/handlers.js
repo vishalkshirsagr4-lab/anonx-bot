@@ -22,7 +22,7 @@ import {
   botIdentity
 } from './helpers.js';
 import { detectMedia, validateSubmissionForMode, formatMediaBadge } from './media.js';
-import { handlePikoDM, handlePikoGroup, handlePikoAI, handlePikoVoice } from './piko.js';
+import { handlePikoDM, handlePikoGroup, handlePikoAI, handlePikoVoice, sendPikoSticker } from './piko.js';
 import { dashboardMarkup, dashboardCaption } from './dashboard.js';
 
 // ────────────────────────────────────────────────────────────
@@ -142,6 +142,7 @@ async function handleNewChatMembers(msg, env) {
 
 async function groupStart(env, msg) {
   const chatId = String(msg.chat.id);
+  await sendPikoSticker(env, chatId, 'start');
   // Refresh Telegram's group command menu when the bot is started in a group.
   await setupCommands(env);
   const id = await botIdentity(env);
@@ -238,14 +239,16 @@ async function handleDM(msg, env, ctx) {
         }
         const startTxt = await dashboardCaption(env, msg.from);
         const markup = await dashboardMarkup(env, msg.from);
+        const dynamicStartSticker = await kvGet(env, 'piko_sticker:start');
         return sendStickerThenButtons(env, chatId, {
-          sticker: STICKERS.start,
+          sticker: dynamicStartSticker || STICKERS.start,
           text: startTxt,
           markup
         });
       }
 
       case 'help': {
+        await sendPikoSticker(env, chatId, 'help');
         const v = helpMainView(userId, 'help');
         return send(env, chatId, v.text, {
           card: { icon: 'book', title: 'Help Center', subtitle: 'Commands, rules and guides', cache: true },
